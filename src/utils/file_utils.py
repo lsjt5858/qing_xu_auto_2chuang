@@ -2,11 +2,13 @@
 文件处理工具函数
 """
 import os
+import re
+import glob
 
 
 def read_video_list(list_file):
     """
-    从文件读取视频路径列表，支持提取抖音分享链接
+    从文件读取视频路径列表，支持提取链接和通配符
     
     Args:
         list_file: 列表文件路径
@@ -14,13 +16,12 @@ def read_video_list(list_file):
     Returns:
         list: 视频路径/链接列表
     """
-    import re
     videos = []
     
     with open(list_file, 'r', encoding='utf-8') as f:
         content = f.read()
     
-    # 按行处理，但保留完整的分享文本
+    # 按行处理
     lines = content.split('\n')
     current_text = ""
     
@@ -29,7 +30,6 @@ def read_video_list(list_file):
         
         # 跳过空行和注释
         if not line or line.startswith('#'):
-            # 如果之前有累积的文本，处理它
             if current_text:
                 process_line(current_text, videos)
                 current_text = ""
@@ -47,7 +47,19 @@ def read_video_list(list_file):
     if current_text:
         process_line(current_text, videos)
     
-    return videos
+    # 展开通配符
+    expanded_videos = []
+    for item in videos:
+        if '*' in item or '?' in item:
+            matches = glob.glob(item)
+            if matches:
+                expanded_videos.extend(sorted(matches))
+            else:
+                print(f"警告: 通配符 '{item}' 没有匹配到任何文件")
+        else:
+            expanded_videos.append(item)
+    
+    return expanded_videos
 
 
 def process_line(text, videos):
@@ -58,13 +70,11 @@ def process_line(text, videos):
         text: 文本内容
         videos: 视频列表（会被修改）
     """
-    import re
-    
     # 尝试提取 URL
     url_match = re.search(r'https?://[^\s]+', text)
     if url_match:
         url = url_match.group(0)
-        # 清理末尾可能的标点符号和特殊字符
+        # 清理末尾可能的标点符号
         url = re.sub(r'[.,;!?\s]+$', '', url)
         videos.append(url)
     else:

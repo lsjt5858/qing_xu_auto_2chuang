@@ -9,6 +9,7 @@ from datetime import datetime
 from .scene_detector import SceneDetector
 from .audio_extractor import AudioExtractor
 from .transcriber import Transcriber
+from .subtitle_remover import SubtitleRemover
 
 
 class VideoAnalyzer:
@@ -22,6 +23,7 @@ class VideoAnalyzer:
             video_path: 视频文件路径
             base_output_dir: 输出根目录
         """
+        self.original_video_path = video_path
         self.video_path = video_path
         self.video_name = Path(video_path).stem
         
@@ -34,6 +36,29 @@ class VideoAnalyzer:
         print(f"视频: {self.video_name}")
         print(f"输出目录: {self.output_dir}")
         print(f"{'='*60}")
+
+    def remove_subtitles(self, subtitle_bar_height=None):
+        """
+        去除底部烧录字幕并生成新视频
+
+        Args:
+            subtitle_bar_height: 手动指定字幕黑边像素高度
+
+        Returns:
+            str: 去字幕后的视频路径
+        """
+        print("\n=== 步骤 0: 去除底部字幕 ===")
+
+        output_path = os.path.join(self.output_dir, "video_no_subtitles.mp4")
+        remover = SubtitleRemover()
+        result = remover.remove(self.video_path, output_path, subtitle_bar_height)
+
+        self.video_path = result["output_path"]
+
+        print(f"✓ 检测到底部字幕黑边高度: {result['subtitle_bar_height']} 像素")
+        print(f"✓ 无字幕视频已保存到: {self.video_path}")
+
+        return self.video_path
     
     def analyze_scenes(self, threshold=27.0):
         """
@@ -140,7 +165,9 @@ class VideoAnalyzer:
         
         report = {
             "video_name": self.video_name,
-            "video_path": self.video_path,
+            "original_video_path": self.original_video_path,
+            "processed_video_path": self.video_path,
+            "subtitle_removed": self.original_video_path != self.video_path,
             "output_directory": self.output_dir,
             "total_scenes": len(scenes_info) if scenes_info else 0,
             "scenes": scenes_info or [],

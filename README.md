@@ -80,8 +80,14 @@ video.mp4
 # 完整分析（分镜+音频+文案）
 ./run.sh video.mp4
 
+# 批量处理（使用通配符）
+./run.sh test_videos/*.mp4
+
+# 使用列表文件
+./run.sh --list urls.txt
+
 # 只下载视频
-./run.sh https://v.douyin.com/xxx/ --download-only
+./run.sh https://www.youtube.com/watch?v=xxx --download-only
 
 # 只分割场景
 ./run.sh video.mp4 --scenes-only

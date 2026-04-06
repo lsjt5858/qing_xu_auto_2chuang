@@ -2,13 +2,15 @@
 # 每行一个链接或本地文件路径
 # 以 # 开头的行会被忽略
 
+# 本地文件示例（支持通配符）
+test_videos/*.mp4
+
+# 或者指定具体文件
+# test_videos/video1.mp4
+# test_videos/video2.mp4
+
 # YouTube 视频示例
 # https://www.youtube.com/watch?v=xxx
 
 # B站视频示例
 # https://www.bilibili.com/video/BVxxx
-
-# 本地文件示例
-# video.mp4
-# /path/to/video.mp4
-
