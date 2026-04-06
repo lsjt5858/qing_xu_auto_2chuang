@@ -1,15 +1,16 @@
 # 视频链接列表
-# 可以直接粘贴抖音分享文本（支持多行），工具会自动提取链接
+# 每行一个链接或本地文件路径
 # 以 # 开头的行会被忽略
 
-# 示例 1：直接粘贴抖音分享文本（可以是多行）
-# 7.48 复制打开抖音，看看【int7-的作品】有些东西必须放弃 才能迎来新生. # 纽约 i... https://v.douyin.com/xxx/ XmQ:/ Q@x.Fu 03/30
+# 本地文件示例（支持通配符）
+test_videos/*.mp4
 
-# 示例 2：只粘贴链接
-# https://v.douyin.com/xxx/
+# 或者指定具体文件
+# test_videos/video1.mp4
+# test_videos/video2.mp4
+
+# YouTube 视频示例
 # https://www.youtube.com/watch?v=xxx
-# https://www.bilibili.com/video/BVxxx
 
-# 示例 3：本地文件
-# video.mp4
-# /path/to/video.mp4
+# B站视频示例
+# https://www.bilibili.com/video/BVxxx

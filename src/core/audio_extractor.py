@@ -28,7 +28,7 @@ class AudioExtractor:
         # 确保输出目录存在
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
-        video.audio.write_audiofile(output_path, verbose=False, logger=None)
+        video.audio.write_audiofile(output_path, logger=None)
         video.close()
         
         return output_path

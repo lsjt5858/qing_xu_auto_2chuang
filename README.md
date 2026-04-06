@@ -1,6 +1,7 @@
 # 视频分析工具
 
 一个强大的视频分析工具，支持：
+- ✂️ 自动去字幕：自动检测并去除视频底部烧录字幕
 - 🎬 自动分镜：智能检测场景变化，分割成独立视频
 - 🎵 音频提取：提取视频中的音频轨道
 - 📝 语音转文字：使用 AI 将音频转换为文字文案（支持中文）
@@ -31,8 +32,17 @@ brew install ffmpeg
 
 #### 1. 分析本地视频
 ```bash
+# 默认流程：先去字幕，再分镜、提取音频、转文字
 ./run.sh video.mp4
 ```
+
+#### 1.1 文件名里有空格时
+```bash
+# 请使用英文半角双引号包住整个路径
+./run.sh "/Users/apple1/Desktop/chai_shi_pin/test_videos/“老天爷 请你再给这个小孩一点运气吧”.mp4"
+```
+
+**注意：** 终端里要用英文双引号 `"..."` 包住路径，不能只依赖文件名里的中文引号 `“...”`，否则会被 shell 按空格拆成多个参数。
 
 #### 2. 从链接下载并分析
 
@@ -77,16 +87,28 @@ video.mp4
 ## 常用命令
 
 ```bash
-# 完整分析（分镜+音频+文案）
+# 完整分析（默认：先去字幕，再分镜+音频+文案）
 ./run.sh video.mp4
 
-# 只下载视频
-./run.sh https://v.douyin.com/xxx/ --download-only
-
-# 只分割场景
+# 去字幕 + 分镜
 ./run.sh video.mp4 --scenes-only
 
-# 只提取音频和文案
+# 去字幕 + 分镜（绝对路径，文件名含空格）
+./run.sh "/Users/apple1/Desktop/chai_shi_pin/test_videos/“老天爷 请你再给这个小孩一点运气吧”.mp4" --scenes-only
+
+# 只导出去字幕后的视频
+./run.sh video.mp4 --remove-subtitles-only
+
+# 批量处理（使用通配符）
+./run.sh test_videos/*.mp4
+
+# 使用列表文件
+./run.sh --list urls.txt
+
+# 只下载视频
+./run.sh https://www.youtube.com/watch?v=xxx --download-only
+
+# 只提取音频和文案（也会先去字幕）
 ./run.sh video.mp4 --audio-only
 
 # 使用更精确的语音识别
@@ -105,8 +127,11 @@ video.mp4
 - `--download-only`: 只下载视频，不进行分析
 - `-o, --output`: 输出根目录（默认: output）
 - `-t, --threshold`: 场景检测阈值 0-255（默认: 27）
-- `--scenes-only`: 只分割场景
-- `--audio-only`: 只提取音频和文案
+- `--remove-subtitles`: 先移除视频底部烧录字幕，再继续后续处理（`run.sh` 默认已启用）
+- `--remove-subtitles-only`: 只导出去字幕后的视频
+- `--subtitle-bar-height`: 手动指定底部字幕黑边高度（像素）
+- `--scenes-only`: 只分割场景（仍会先去字幕）
+- `--audio-only`: 只提取音频和文案（仍会先去字幕）
 - `--whisper-model`: 语音识别模型
   - `tiny`: 最快，准确度较低
   - `base`: 平衡（默认）
@@ -123,6 +148,7 @@ downloads/                  # 下载的视频（使用 -d 时）
 
 output/                     # 分析结果
 ├── video1_20260406_143022/
+│   ├── video_no_subtitles.mp4  # 去字幕后的最终视频
 │   ├── scenes/            # 分镜视频
 │   │   ├── Scene-001.mp4
 │   │   ├── Scene-002.mp4
@@ -202,6 +228,10 @@ A: 使用更大的模型，如 `--whisper-model medium`
 
 ### Q: 分镜太多或太少？
 A: 调整 `-t` 参数，值越小分镜越多，值越大分镜越少
+
+### Q: 文件路径里有空格，为什么命令报“找不到视频文件”？
+A: 请用英文半角双引号包住整个路径，例如：
+`./run.sh "/Users/apple1/Desktop/chai_shi_pin/test_videos/“老天爷 请你再给这个小孩一点运气吧”.mp4" --scenes-only`
 
 ### Q: 可以直接粘贴抖音分享文本吗？
 A: 工具会尝试提取链接，但抖音无法直接下载。建议使用官方下载功能后再分析

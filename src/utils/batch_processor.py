@@ -43,6 +43,18 @@ class BatchProcessor:
             scenes_info = None
             audio_path = None
             transcript_result = None
+
+            if getattr(args, "remove_subtitles", False):
+                analyzer.remove_subtitles(
+                    getattr(args, "subtitle_bar_height", None)
+                )
+
+                if getattr(args, "remove_subtitles_only", False):
+                    print(f"\n{'='*60}")
+                    print(f"✓ 视频 '{Path(video_path).name}' 去字幕完成！")
+                    print(f"输出目录: {analyzer.output_dir}")
+                    print(f"{'='*60}\n")
+                    return True
             
             # 分割场景
             if not args.audio_only:

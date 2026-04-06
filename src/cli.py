@@ -12,12 +12,15 @@ from .core.video_downloader import VideoDownloader
 def create_parser():
     """创建命令行参数解析器"""
     parser = argparse.ArgumentParser(
-        description="视频分析工具 - 分镜分割、音频提取、语音转文字（支持批量处理）",
+        description="视频分析工具 - 去字幕、分镜分割、音频提取、语音转文字（支持批量处理）",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
   # 分析本地视频
   python main.py video.mp4
+
+  # 只导出去字幕视频
+  python main.py video.mp4 --remove-subtitles-only
   
   # 从链接下载并分析
   python main.py https://v.douyin.com/xxx/ -d
@@ -61,6 +64,12 @@ urls.txt 格式示例:
     parser.add_argument("--whisper-model", default="base", 
                        choices=["tiny", "base", "small", "medium", "large"],
                        help="Whisper 模型大小 (默认: base)")
+    parser.add_argument("--remove-subtitles", action="store_true",
+                       help="先移除视频底部烧录字幕，再继续后续处理")
+    parser.add_argument("--remove-subtitles-only", action="store_true",
+                       help="只导出去字幕后的视频，不执行其他分析步骤")
+    parser.add_argument("--subtitle-bar-height", type=int,
+                       help="手动指定底部字幕黑边高度（像素）")
     
     return parser
 
@@ -74,6 +83,9 @@ def main():
     """主函数"""
     parser = create_parser()
     args = parser.parse_args()
+
+    if args.remove_subtitles_only:
+        args.remove_subtitles = True
     
     # 收集所有要处理的视频/链接
     video_list = []
