@@ -1,0 +1,16 @@
+# 视频链接列表示例
+# 每行一个视频链接，支持抖音、YouTube、B站等平台
+# 以 # 开头的行会被忽略
+
+# 抖音短视频
+https://v.douyin.com/xxxxxxx/
+
+# YouTube 视频
+https://www.youtube.com/watch?v=xxxxxxx
+
+# B站视频
+https://www.bilibili.com/video/BVxxxxxxx
+
+# 可以混合本地文件和链接
+video.mp4
+https://example.com/video.mp4
