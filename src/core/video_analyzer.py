@@ -11,6 +11,16 @@ from .audio_extractor import AudioExtractor
 from .transcriber import Transcriber
 from .subtitle_remover import SubtitleRemover
 
+# 新功能模块（待实现）
+from .subtitle_generator import SubtitleGenerator
+from .subtitle_translator import SubtitleTranslator
+from .video_compressor import VideoCompressor
+from .format_converter import FormatConverter
+from .video_enhancer import VideoEnhancer
+from .audio_processor import AudioProcessor
+from .content_analyzer import ContentAnalyzer
+from .smart_editor import SmartEditor
+
 
 class VideoAnalyzer:
     """视频分析器 - 整合分镜、音频提取、语音转文字"""
@@ -181,3 +191,208 @@ class VideoAnalyzer:
         
         print(f"✓ 完整报告已保存到: {report_path}")
         return report
+    
+    # ========== 新功能入口（待实现） ==========
+    
+    def generate_subtitles(self, transcript_segments, format="srt", style=None):
+        """
+        生成字幕文件
+        
+        Args:
+            transcript_segments: 带时间戳的文案片段
+            format: 字幕格式（'srt' 或 'ass'）
+            style: 字幕样式（仅 ASS 格式）
+            
+        Returns:
+            str: 生成的字幕文件路径
+        """
+        print("\n=== 生成字幕文件 ===")
+        generator = SubtitleGenerator()
+        
+        output_path = os.path.join(self.output_dir, f"subtitle.{format}")
+        
+        if format == "srt":
+            return generator.generate_srt(transcript_segments, output_path)
+        elif format == "ass":
+            return generator.generate_ass(transcript_segments, output_path, style)
+        else:
+            raise ValueError(f"不支持的字幕格式: {format}")
+    
+    def translate_subtitles(self, subtitle_path, target_language):
+        """
+        翻译字幕
+        
+        Args:
+            subtitle_path: 原字幕文件路径
+            target_language: 目标语言代码
+            
+        Returns:
+            str: 翻译后的字幕文件路径
+        """
+        print(f"\n=== 翻译字幕到 {target_language} ===")
+        translator = SubtitleTranslator()
+        
+        output_path = os.path.join(
+            self.output_dir, 
+            f"subtitle_{target_language}.{Path(subtitle_path).suffix}"
+        )
+        
+        return translator.translate(subtitle_path, target_language, output_path)
+    
+    def compress_video(self, quality="medium", target_size_mb=None):
+        """
+        压缩视频
+        
+        Args:
+            quality: 压缩质量
+            target_size_mb: 目标文件大小（MB）
+            
+        Returns:
+            dict: 压缩结果信息
+        """
+        print("\n=== 压缩视频 ===")
+        compressor = VideoCompressor()
+        
+        output_path = os.path.join(self.output_dir, "video_compressed.mp4")
+        
+        return compressor.compress(self.video_path, output_path, quality, target_size_mb)
+    
+    def convert_format(self, target_format, resolution=None, bitrate=None):
+        """
+        转换视频格式
+        
+        Args:
+            target_format: 目标格式
+            resolution: 目标分辨率
+            bitrate: 目标码率
+            
+        Returns:
+            str: 转换后的视频路径
+        """
+        print(f"\n=== 转换格式到 {target_format} ===")
+        converter = FormatConverter()
+        
+        output_path = os.path.join(self.output_dir, f"video.{target_format}")
+        
+        return converter.convert(self.video_path, output_path, target_format, resolution, bitrate)
+    
+    def enhance_video(self, auto=True, brightness=0, contrast=1.0, denoise=False, stabilize=False):
+        """
+        增强视频质量
+        
+        Args:
+            auto: 是否自动增强
+            brightness: 亮度调整
+            contrast: 对比度调整
+            denoise: 是否降噪
+            stabilize: 是否稳定画面
+            
+        Returns:
+            str: 增强后的视频路径
+        """
+        print("\n=== 增强视频质量 ===")
+        enhancer = VideoEnhancer()
+        
+        output_path = os.path.join(self.output_dir, "video_enhanced.mp4")
+        
+        if auto:
+            return enhancer.auto_enhance(self.video_path, output_path)
+        
+        # TODO: 支持更多自定义增强选项
+        return output_path
+    
+    def process_audio(self, separate_vocals=False, denoise=False, normalize=False):
+        """
+        处理音频
+        
+        Args:
+            separate_vocals: 是否分离人声
+            denoise: 是否降噪
+            normalize: 是否标准化音量
+            
+        Returns:
+            dict: 处理结果
+        """
+        print("\n=== 处理音频 ===")
+        processor = AudioProcessor()
+        
+        audio_path = os.path.join(self.output_dir, "audio.mp3")
+        
+        if not os.path.exists(audio_path):
+            raise FileNotFoundError("请先提取音频")
+        
+        result = {}
+        
+        if separate_vocals:
+            vocals_path = os.path.join(self.output_dir, "audio_vocals.mp3")
+            music_path = os.path.join(self.output_dir, "audio_music.mp3")
+            result["vocals"] = processor.separate_vocals(audio_path, vocals_path, music_path)
+        
+        if denoise:
+            denoised_path = os.path.join(self.output_dir, "audio_denoised.mp3")
+            result["denoised"] = processor.denoise(audio_path, denoised_path)
+        
+        if normalize:
+            normalized_path = os.path.join(self.output_dir, "audio_normalized.mp3")
+            result["normalized"] = processor.normalize_volume(audio_path, normalized_path)
+        
+        return result
+    
+    def analyze_content(self, detect_faces=False, detect_objects=False, extract_text=False):
+        """
+        分析视频内容
+        
+        Args:
+            detect_faces: 是否检测人脸
+            detect_objects: 是否识别物体
+            extract_text: 是否提取文字（OCR）
+            
+        Returns:
+            dict: 分析结果
+        """
+        print("\n=== 分析视频内容 ===")
+        analyzer = ContentAnalyzer()
+        
+        result = {}
+        
+        if detect_faces:
+            result["faces"] = analyzer.detect_faces(self.video_path)
+        
+        if detect_objects:
+            result["objects"] = analyzer.detect_objects(self.video_path)
+        
+        if extract_text:
+            result["text"] = analyzer.extract_text_ocr(self.video_path)
+        
+        return result
+    
+    def smart_edit(self, remove_silence=False, remove_duplicates=False, extract_keyframes=False):
+        """
+        智能编辑
+        
+        Args:
+            remove_silence: 是否去除静音
+            remove_duplicates: 是否去除重复
+            extract_keyframes: 是否提取关键帧
+            
+        Returns:
+            dict: 编辑结果
+        """
+        print("\n=== 智能编辑 ===")
+        editor = SmartEditor()
+        
+        result = {}
+        
+        if remove_silence:
+            output_path = os.path.join(self.output_dir, "video_no_silence.mp4")
+            result["no_silence"] = editor.remove_silence(self.video_path, output_path)
+        
+        if remove_duplicates:
+            output_path = os.path.join(self.output_dir, "video_no_duplicates.mp4")
+            result["no_duplicates"] = editor.remove_duplicates(self.video_path, output_path)
+        
+        if extract_keyframes:
+            keyframes_dir = os.path.join(self.output_dir, "keyframes")
+            result["keyframes"] = editor.extract_keyframes(self.video_path, keyframes_dir)
+        
+        return result

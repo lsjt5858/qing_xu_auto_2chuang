@@ -19,14 +19,31 @@ video-analyzer/
 │   ├── core/                   # 核心功能模块
 │   │   ├── __init__.py
 │   │   ├── video_analyzer.py  # 视频分析器（主类）
-│   │   ├── scene_detector.py  # 场景检测
-│   │   ├── audio_extractor.py # 音频提取
-│   │   └── transcriber.py     # 语音转文字
+│   │   ├── scene_detector.py  # 场景检测 ✅
+│   │   ├── audio_extractor.py # 音频提取 ✅
+│   │   ├── transcriber.py     # 语音转文字 ✅
+│   │   ├── subtitle_remover.py # 字幕去除 ✅
+│   │   ├── video_downloader.py # 视频下载 ✅
+│   │   │
+│   │   # 新功能模块（已预留接口）
+│   │   ├── subtitle_generator.py   # 字幕生成 🔜
+│   │   ├── subtitle_translator.py  # 字幕翻译 🔜
+│   │   ├── video_compressor.py     # 视频压缩 🔜
+│   │   ├── format_converter.py     # 格式转换 🔜
+│   │   ├── video_enhancer.py       # 视频增强 🔜
+│   │   ├── audio_processor.py      # 音频处理 🔜
+│   │   ├── content_analyzer.py     # 内容分析 🔜
+│   │   └── smart_editor.py         # 智能剪辑 🔜
 │   │
 │   └── utils/                  # 工具函数
 │       ├── __init__.py
-│       ├── file_utils.py      # 文件处理工具
-│       └── batch_processor.py # 批量处理器
+│       ├── file_utils.py      # 文件处理工具 ✅
+│       ├── batch_processor.py # 批量处理器 ✅
+│       │
+│       # 新工具模块（已预留接口）
+│       ├── platform_adapter.py # 平台适配 🔜
+│       ├── export_utils.py     # 导出工具 🔜
+│       └── stats_generator.py  # 统计报告 🔜
 │
 ├── config/                     # 配置文件
 │   ├── __init__.py
@@ -172,11 +189,53 @@ python -m unittest discover tests
 
 ## 未来扩展方向
 
-- [ ] 视频下载功能（支持抖音、YouTube 等）
-- [ ] 字幕生成和嵌入
-- [ ] 视频摘要和关键帧提取
-- [ ] Web UI 界面
-- [ ] 云端处理支持
-- [ ] 多语言支持
-- [ ] 视频质量分析
-- [ ] 自动标签和分类
+### 已预留功能接口 ✅
+
+所有 TODO 中的功能都已在 `VideoAnalyzer` 中预留了接口：
+
+#### 字幕相关
+- `generate_subtitles()` - 生成 SRT/ASS 字幕
+- `translate_subtitles()` - 字幕翻译
+
+#### 视频处理
+- `compress_video()` - 视频压缩
+- `convert_format()` - 格式转换
+- `enhance_video()` - 视频增强（亮度/对比度/降噪/稳定）
+
+#### 音频处理
+- `process_audio()` - 音频处理（人声分离/降噪/标准化）
+
+#### AI 分析
+- `analyze_content()` - 内容分析（人脸/物体/OCR）
+
+#### 智能编辑
+- `smart_edit()` - 智能编辑（去静音/去重复/关键帧）
+
+### 使用示例
+
+```python
+from src.core import VideoAnalyzer
+
+analyzer = VideoAnalyzer("video.mp4")
+
+# 现有功能
+analyzer.remove_subtitles()
+analyzer.analyze_scenes()
+audio = analyzer.extract_audio()
+transcript = analyzer.transcribe_audio(audio)
+
+# 新功能（待实现）
+analyzer.generate_subtitles(transcript["segments"], format="srt")
+analyzer.compress_video(quality="high")
+analyzer.enhance_video(auto=True)
+analyzer.analyze_content(detect_faces=True, extract_text=True)
+analyzer.smart_edit(remove_silence=True, extract_keyframes=True)
+```
+
+### 待实现功能清单
+
+- [ ] Web UI 界面（Flask/FastAPI）
+- [ ] 云存储集成
+- [ ] 自动化工作流
+- [ ] 视频对比功能
+- [ ] 更多平台支持

@@ -239,6 +239,8 @@ A: 工具会尝试提取链接，但抖音无法直接下载。建议使用官�
 ## 文档
 
 - [架构文档](docs/ARCHITECTURE.md) - 项目架构和扩展指南
+- [功能状态](docs/FEATURES_STATUS.md) - 所有功能的实现状态和使用方法
+- [重构计划](docs/REFACTORING_PLAN.md) - 代码结构优化方案
 - [API 文档](docs/API.md) - 编程接口文档
 - [贡献指南](docs/CONTRIBUTING.md) - 如何贡献代码
 
