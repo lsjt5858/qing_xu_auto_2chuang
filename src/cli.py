@@ -100,8 +100,20 @@ def main():
             return
     
     if args.videos:
-        # 从命令行参数添加视频
-        video_list.extend(args.videos)
+        VIDEO_EXTENSIONS = ('.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm')
+        for item in args.videos:
+            if os.path.isdir(item):
+                dir_videos = sorted(
+                    os.path.join(item, f) for f in os.listdir(item)
+                    if f.lower().endswith(VIDEO_EXTENSIONS)
+                )
+                if dir_videos:
+                    print(f"从目录 '{item}' 扫描到 {len(dir_videos)} 个视频文件")
+                    video_list.extend(dir_videos)
+                else:
+                    print(f"警告: 目录 '{item}' 中未找到视频文件")
+            else:
+                video_list.append(item)
     
     if not video_list:
         print("错误: 请提供至少一个视频文件/链接或使用 --list 指定列表文件")
