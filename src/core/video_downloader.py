@@ -93,7 +93,7 @@ class VideoDownloader:
             
             if result.returncode == 0:
                 # 查找下载的文件
-                files = list(Path(self.output_dir).glob("*"))
+                files = [f for f in Path(self.output_dir).glob("*") if not f.name.startswith('._')]
                 if files:
                     latest_file = max(files, key=lambda x: x.stat().st_mtime)
                     print(f"✓ 下载成功: {latest_file.name}")

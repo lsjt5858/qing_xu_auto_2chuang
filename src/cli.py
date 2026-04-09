@@ -105,7 +105,7 @@ def main():
             if os.path.isdir(item):
                 dir_videos = sorted(
                     os.path.join(item, f) for f in os.listdir(item)
-                    if f.lower().endswith(VIDEO_EXTENSIONS)
+                    if not f.startswith('._') and f.lower().endswith(VIDEO_EXTENSIONS)
                 )
                 if dir_videos:
                     print(f"从目录 '{item}' 扫描到 {len(dir_videos)} 个视频文件")
