@@ -49,15 +49,15 @@ class VideoAnalyzer:
 
     def remove_subtitles(self, subtitle_bar_height=None):
         """
-        去除底部烧录字幕并生成新视频
+        去除底部烧录字幕，并清理底部区域的固定透明水印
 
         Args:
             subtitle_bar_height: 手动指定字幕黑边像素高度
 
         Returns:
-            str: 去字幕后的视频路径
+            str: 预处理后的视频路径
         """
-        print("\n=== 步骤 0: 去除底部字幕 ===")
+        print("\n=== 步骤 0: 去除底部字幕/水印 ===")
 
         output_path = os.path.join(self.output_dir, "video_no_subtitles.mp4")
         remover = SubtitleRemover()
@@ -65,8 +65,17 @@ class VideoAnalyzer:
 
         self.video_path = result["output_path"]
 
-        print(f"✓ 检测到底部字幕黑边高度: {result['subtitle_bar_height']} 像素")
-        print(f"✓ 无字幕视频已保存到: {self.video_path}")
+        if result["subtitle_bar_height"] > 0:
+            print(f"✓ 检测到底部字幕黑边高度: {result['subtitle_bar_height']} 像素")
+        else:
+            print("✓ 未检测到底部字幕黑边，已跳过黑边裁切")
+
+        if result["watermark_removed"]:
+            print(f"✓ 已清理底部固定透明水印（掩码面积: {result['watermark_mask_area']} 像素）")
+        else:
+            print("✓ 未检测到底部固定透明水印，已跳过去水印")
+
+        print(f"✓ 预处理视频已保存到: {self.video_path}")
 
         return self.video_path
     

@@ -12,7 +12,7 @@ from .core.video_downloader import VideoDownloader
 def create_parser():
     """创建命令行参数解析器"""
     parser = argparse.ArgumentParser(
-        description="视频分析工具 - 去字幕、分镜分割、音频提取、语音转文字（支持批量处理）",
+        description="视频分析工具 - 去字幕/去底部水印、分镜分割、音频提取、语音转文字（支持批量处理）",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
@@ -65,9 +65,9 @@ urls.txt 格式示例:
                        choices=["tiny", "base", "small", "medium", "large"],
                        help="Whisper 模型大小 (默认: base)")
     parser.add_argument("--remove-subtitles", action="store_true",
-                       help="先移除视频底部烧录字幕，再继续后续处理")
+                       help="先移除视频底部烧录字幕，并清理底部区域的固定半透明水印，再继续后续处理")
     parser.add_argument("--remove-subtitles-only", action="store_true",
-                       help="只导出去字幕后的视频，不执行其他分析步骤")
+                       help="只导出去字幕/去水印后的预处理视频，不执行其他分析步骤")
     parser.add_argument("--subtitle-bar-height", type=int,
                        help="手动指定底部字幕黑边高度（像素）")
     

@@ -1,7 +1,7 @@
 # 视频分析工具
 
 一个强大的视频分析工具，支持：
-- ✂️ 自动去字幕：自动检测并去除视频底部烧录字幕
+- ✂️ 自动去字幕/去水印：自动检测并去除视频底部烧录字幕，以及底部区域的固定半透明水印
 - 🎬 自动分镜：智能检测场景变化，分割成独立视频
 - 🎵 音频提取：提取视频中的音频轨道
 - 📝 语音转文字：使用 AI 将音频转换为文字文案（支持中文）
@@ -32,7 +32,7 @@ brew install ffmpeg
 
 #### 1. 分析本地视频
 ```bash
-# 默认流程：先去字幕，再分镜、提取音频、转文字
+# 默认流程：先去字幕/去底部固定水印，再分镜、提取音频、转文字
 ./run.sh video.mp4
 ```
 
@@ -87,16 +87,16 @@ video.mp4
 ## 常用命令
 
 ```bash
-# 完整分析（默认：先去字幕，再分镜+音频+文案）
+# 完整分析（默认：先去字幕/去水印，再分镜+音频+文案）
 ./run.sh video.mp4
 
-# 去字幕 + 分镜
+# 去字幕/去水印 + 分镜
 ./run.sh video.mp4 --scenes-only
 
 # 去字幕 + 分镜（绝对路径，文件名含空格）
 ./run.sh "/Users/apple1/Desktop/chai_shi_pin/test_videos/“老天爷 请你再给这个小孩一点运气吧”.mp4" --scenes-only
 
-# 只导出去字幕后的视频
+# 只导出去字幕/去水印后的视频
 ./run.sh video.mp4 --remove-subtitles-only
 
 # 批量处理（使用通配符）
@@ -127,8 +127,8 @@ video.mp4
 - `--download-only`: 只下载视频，不进行分析
 - `-o, --output`: 输出根目录（默认: output）
 - `-t, --threshold`: 场景检测阈值 0-255（默认: 27）
-- `--remove-subtitles`: 先移除视频底部烧录字幕，再继续后续处理（`run.sh` 默认已启用）
-- `--remove-subtitles-only`: 只导出去字幕后的视频
+- `--remove-subtitles`: 先移除视频底部烧录字幕，并清理底部区域的固定半透明水印，再继续后续处理（`run.sh` 默认已启用）
+- `--remove-subtitles-only`: 只导出去字幕/去水印后的预处理视频
 - `--subtitle-bar-height`: 手动指定底部字幕黑边高度（像素）
 - `--scenes-only`: 只分割场景（仍会先去字幕）
 - `--audio-only`: 只提取音频和文案（仍会先去字幕）
@@ -148,7 +148,7 @@ downloads/                  # 下载的视频（使用 -d 时）
 
 output/                     # 分析结果
 ├── video1_20260406_143022/
-│   ├── video_no_subtitles.mp4  # 去字幕后的最终视频
+│   ├── video_no_subtitles.mp4  # 去字幕/去水印后的预处理视频
 │   ├── scenes/            # 分镜视频
 │   │   ├── Scene-001.mp4
 │   │   ├── Scene-002.mp4
