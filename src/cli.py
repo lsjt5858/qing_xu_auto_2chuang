@@ -70,6 +70,23 @@ urls.txt 格式示例:
                        help="只导出去字幕/去水印后的预处理视频，不执行其他分析步骤")
     parser.add_argument("--subtitle-bar-height", type=int,
                        help="手动指定底部字幕黑边高度（像素）")
+    parser.add_argument("--export-jianying", action="store_true",
+                       help="分析完成后自动导出为剪映草稿")
+    parser.add_argument("--compose-with-pool",
+                       help="使用视频池重组尾部镜头后再导出剪映草稿")
+    parser.add_argument("--head-mode", choices=["first-scene", "fixed-seconds", "none"],
+                       default="first-scene",
+                       help="组合模式下保留原视频头部的规则 (默认: first-scene)")
+    parser.add_argument("--head-duration", type=float,
+                       help="当 --head-mode=fixed-seconds 时，保留头部秒数")
+    parser.add_argument("--compose-seed", type=int,
+                       help="组合模式下随机选镜头的随机种子")
+    parser.add_argument("--draft-root",
+                       help="剪映草稿箱根目录，默认使用本机剪映目录")
+    parser.add_argument("--template-dir",
+                       help="剪映草稿模板目录，默认使用项目内置模板")
+    parser.add_argument("--draft-name",
+                       help="导出的剪映草稿名称")
     
     return parser
 
@@ -86,6 +103,9 @@ def main():
 
     if args.remove_subtitles_only:
         args.remove_subtitles = True
+
+    if args.compose_with_pool:
+        args.export_jianying = True
     
     # 收集所有要处理的视频/链接
     video_list = []

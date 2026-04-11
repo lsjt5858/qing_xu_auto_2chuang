@@ -1,252 +1,180 @@
-# 视频分析工具
+# 柴视频
 
-一个强大的视频分析工具，支持：
-- ✂️ 自动去字幕/去水印：自动检测并去除视频底部烧录字幕，以及底部区域的固定半透明水印
-- 🎬 自动分镜：智能检测场景变化，分割成独立视频
-- 🎵 音频提取：提取视频中的音频轨道
-- 📝 语音转文字：使用 AI 将音频转换为文字文案（支持中文）
-- 📦 批量处理：支持一次处理多个视频
-- 🌐 视频下载：支持从抖音、YouTube、B站等平台下载视频
+批量视频混剪素材处理工具。自动清洗源视频、拆分镜、提取文案，为二次混剪生产准备好素材。
 
-## 快速开始
+## 它做什么
 
-### 安装
+将一批原始短视频（如抖音情绪类视频）自动处理成可直接混剪的素材：
+
+```
+原始视频 → 去字幕/去水印 → 分镜拆分 → 音频提取 → 语音转文字 → 剪映草稿
+                ↓                ↓
+         干净的源素材        可组合的分镜片段
+```
+
+## 核心功能
+
+- **去字幕/去水印** — 自动检测并裁切底部烧录字幕，清理固定半透明水印
+- **分镜检测** — 基于场景变化自动拆分为独立片段（Scene-001、Scene-002...）
+- **音频提取 + 语音转文字** — Whisper 转录，输出完整文案和带时间戳的详细文案
+- **分镜收集** — `collect_scenes.sh` 自动将 Scene-001 归为「视频头」，其余归为「视频身」
+- **剪映草稿导出** — 将分镜结果直接导出为剪映可编辑的草稿工程
+- **批量处理** — 支持多文件、整个目录、URL 列表文件
+
+## 安装
 
 ```bash
-# 1. 克隆项目
 git clone https://github.com/lsjt5858/chai_shi_pin.git
 cd chai_shi_pin
 
-# 2. 创建虚拟环境
 python3 -m venv venv
-source venv/bin/activate  # macOS/Linux
+source venv/bin/activate
 
-# 3. 安装依赖
 pip install -r requirements.txt
-
-# 4. 安装 ffmpeg（macOS）
-brew install ffmpeg
+brew install ffmpeg   # macOS
 ```
 
-### 基本使用
+## 快速开始
 
-#### 1. 分析本地视频
+### 完整处理流程
+
 ```bash
-# 默认流程：先去字幕/去底部固定水印，再分镜、提取音频、转文字
+# 处理单个视频（去字幕 → 分镜 → 音频 → 文案）
 ./run.sh video.mp4
+
+# 处理整个目录
+./run.sh test_videos/
+
+# 批量处理多个文件
+./run.sh video1.mp4 video2.mp4 video3.mp4
 ```
 
-#### 1.1 文件名里有空格时
+### 只跑部分步骤
+
 ```bash
-# 请使用英文半角双引号包住整个路径
-./run.sh "/Users/apple1/Desktop/chai_shi_pin/test_videos/“老天爷 请你再给这个小孩一点运气吧”.mp4"
+./run.sh video.mp4 --remove-subtitles-only   # 只去字幕/去水印
+./run.sh video.mp4 --scenes-only              # 去字幕 + 分镜（不处理音频）
+./run.sh video.mp4 --audio-only               # 去字幕 + 音频 + 文案（不分镜）
 ```
 
-**注意：** 终端里要用英文双引号 `"..."` 包住路径，不能只依赖文件名里的中文引号 `“...”`，否则会被 shell 按空格拆成多个参数。
-
-#### 2. 从链接下载并分析
-
-**注意：抖音下载需要登录，推荐使用方式 3**
+### 调参
 
 ```bash
-# YouTube 视频（无需登录）
+./run.sh video.mp4 -t 15                     # 更多分镜（阈值越小分镜越多）
+./run.sh video.mp4 -t 35                     # 更少分镜
+./run.sh video.mp4 --whisper-model medium    # 更准确的语音识别
+./run.sh video.mp4 --subtitle-bar-height 80  # 手动指定字幕区域高度（像素）
+```
+
+### 收集分镜素材
+
+处理完一批视频后，一键收集所有分镜：
+
+```bash
+./collect_scenes.sh
+# Scene-001 → 视频头目录（开场片段）
+# 其余 Scene → 视频身目录（正文片段）
+```
+
+### 导入剪映
+
+```bash
+# 将分镜导出为剪映草稿工程
+python -m src.utils.jianying_draft_exporter output/某个视频目录
+```
+
+### 下载视频
+
+```bash
+# YouTube / B站等无需登录的平台
 ./run.sh https://www.youtube.com/watch?v=xxx -d
-
-# B站视频（无需登录）
 ./run.sh https://www.bilibili.com/video/BVxxx -d
-```
 
-#### 3. 批量处理（推荐）
+# 只下载不分析
+./run.sh https://www.youtube.com/watch?v=xxx --download-only
 
-**方式 A：使用抖音官方下载**
-1. 在抖音 App 中：分享 → 保存本地
-2. 将下载的视频放到项目目录
-3. 运行：
-```bash
-./run.sh video1.mp4 video2.mp4
-```
-
-**方式 B：从链接下载（仅支持 YouTube、B站等无需登录的平台）**
-1. 创建 `urls.txt` 文件：
-```txt
-# YouTube 视频
-https://www.youtube.com/watch?v=xxx
-
-# B站视频
-https://www.bilibili.com/video/BVxxx
-
-# 本地文件
-video.mp4
-```
-
-2. 运行：
-```bash
+# 从列表文件批量下载
 ./run.sh --list urls.txt -d
 ```
 
-## 常用命令
+> **抖音/快手/小红书无法在线下载**，请在 App 中「分享 → 保存本地」后用 `./run.sh video.mp4` 处理。
 
-```bash
-# 完整分析（默认：先去字幕/去水印，再分镜+音频+文案）
-./run.sh video.mp4
+## 参数一览
 
-# 去字幕/去水印 + 分镜
-./run.sh video.mp4 --scenes-only
-
-# 去字幕 + 分镜（绝对路径，文件名含空格）
-./run.sh "/Users/apple1/Desktop/chai_shi_pin/test_videos/“老天爷 请你再给这个小孩一点运气吧”.mp4" --scenes-only
-
-# 只导出去字幕/去水印后的视频
-./run.sh video.mp4 --remove-subtitles-only
-
-# 批量处理（使用通配符）
-./run.sh test_videos/*.mp4
-
-# 使用列表文件
-./run.sh --list urls.txt
-
-# 只下载视频
-./run.sh https://www.youtube.com/watch?v=xxx --download-only
-
-# 只提取音频和文案（也会先去字幕）
-./run.sh video.mp4 --audio-only
-
-# 使用更精确的语音识别
-./run.sh video.mp4 --whisper-model medium
-
-# 调整场景检测灵敏度
-./run.sh video.mp4 -t 15  # 更多分镜
-./run.sh video.mp4 -t 35  # 更少分镜
-```
-
-## 参数说明
-
-- `videos`: 输入视频文件路径或链接（可以多个）
-- `-l, --list`: 包含视频路径/链接列表的文本文件
-- `-d, --download`: 启用下载功能
-- `--download-only`: 只下载视频，不进行分析
-- `-o, --output`: 输出根目录（默认: output）
-- `-t, --threshold`: 场景检测阈值 0-255（默认: 27）
-- `--remove-subtitles`: 先移除视频底部烧录字幕，并清理底部区域的固定半透明水印，再继续后续处理（`run.sh` 默认已启用）
-- `--remove-subtitles-only`: 只导出去字幕/去水印后的预处理视频
-- `--subtitle-bar-height`: 手动指定底部字幕黑边高度（像素）
-- `--scenes-only`: 只分割场景（仍会先去字幕）
-- `--audio-only`: 只提取音频和文案（仍会先去字幕）
-- `--whisper-model`: 语音识别模型
-  - `tiny`: 最快，准确度较低
-  - `base`: 平衡（默认）
-  - `small`: 较准确
-  - `medium`: 很准确
-  - `large`: 最准确，但很慢
+| 参数 | 说明 |
+|------|------|
+| `videos` | 视频文件路径、目录或链接（可多个） |
+| `-l, --list` | 包含路径/链接的文本文件 |
+| `-d, --download` | 启用下载 |
+| `--download-only` | 只下载，不分析 |
+| `-o, --output` | 输出根目录（默认 `output`） |
+| `-t, --threshold` | 场景检测阈值 0–255（默认 27，越小分镜越多） |
+| `--remove-subtitles` | 启用去字幕/去水印（`run.sh` 已默认启用） |
+| `--remove-subtitles-only` | 只输出去字幕视频 |
+| `--subtitle-bar-height` | 手动指定字幕黑边高度（像素） |
+| `--scenes-only` | 只做分镜（仍会先去字幕） |
+| `--audio-only` | 只做音频+文案（仍会先去字幕） |
+| `--whisper-model` | `tiny` / `base`（默认）/ `small` / `medium` / `large` |
 
 ## 输出结构
 
 ```
-downloads/                  # 下载的视频（使用 -d 时）
-├── 视频标题1.mp4
-└── 视频标题2.mp4
-
-output/                     # 分析结果
-├── video1_20260406_143022/
-│   ├── video_no_subtitles.mp4  # 去字幕/去水印后的预处理视频
-│   ├── scenes/            # 分镜视频
-│   │   ├── Scene-001.mp4
-│   │   ├── Scene-002.mp4
-│   │   └── ...
-│   ├── audio.mp3          # 音频
-│   ├── transcript.txt     # 完整文案
-│   ├── transcript_detailed.json  # 带时间戳的文案
-│   └── report.json        # 分析报告
-└── video2_20260406_143045/
-    └── ...
+output/{视频名}_{时间戳}/
+├── video_no_subtitles.mp4      # 清洗后的视频（已去字幕、去水印）
+├── scenes/                     # 分镜片段（可直接用于混剪）
+│   ├── Scene-001.mp4
+│   ├── Scene-002.mp4
+│   └── ...
+├── audio.mp3                   # 提取的音频
+├── transcript.txt              # 完整文案
+├── transcript_detailed.json    # 带时间戳的文案
+└── report.json                 # 分析报告
 ```
 
-## 支持的平台
+## 混剪工作流
 
-### 完全支持（无需登录）
-- ✅ YouTube
-- ✅ B站（Bilibili）
-- ✅ Vimeo
-- ✅ 以及其他 1000+ 平台
+典型的混剪生产流程：
 
-### 不支持在线下载（需要手动下载）
-- ❌ 抖音（Douyin）- 请使用官方下载功能
-- ❌ 快手 - 请使用官方下载功能
-- ❌ 小红书 - 请使用官方下载功能
-
-### 推荐方式：手动下载 + 本工具分析
-1. 在 App 中使用官方下载功能（分享 → 保存本地）
-2. 将下载的视频用本工具分析
+1. **收集源视频** — 从抖音 App 保存到本地
+2. **批量清洗** — `./run.sh *.mp4` 自动去字幕、去水印、分镜、提文案
+3. **收集分镜** — `./collect_scenes.sh` 将所有视频的开场和正文分镜分类归档
+4. **导入剪映** — 用 `jianying_draft_exporter.py` 导出为剪映草稿，或手动挑选分镜组合
+5. **二次创作** — 在剪映中组合分镜、替换文案、添加配乐
 
 ## 项目结构
 
 ```
-video-analyzer/
-├── main.py                 # 主入口
-├── src/                    # 源代码
-│   ├── core/              # 核心功能（场景检测、音频提取、转录、下载）
-│   ├── utils/             # 工具函数（批量处理、文件操作）
-│   └── cli.py             # 命令行接口
-├── config/                # 配置文件
-├── tests/                 # 测试文件
-└── docs/                  # 文档
-```
-
-## 作为 Python 包使用
-
-```python
-from src.core import VideoAnalyzer, VideoDownloader
-
-# 下载视频
-downloader = VideoDownloader()
-video_path = downloader.download("https://v.douyin.com/xxx/")
-
-# 分析视频
-analyzer = VideoAnalyzer(video_path)
-scenes = analyzer.analyze_scenes(threshold=27.0)
-audio = analyzer.extract_audio()
-transcript = analyzer.transcribe_audio(audio, model_size="base")
-report = analyzer.generate_report(scenes, transcript)
+main.py                        # 入口
+run.sh                         # 激活 venv + 默认启用去字幕
+collect_scenes.sh              # 收集分镜到外部目录
+src/
+├── cli.py                     # 命令行参数、流程调度
+├── core/
+│   ├── video_analyzer.py      # 主控类，串联处理步骤
+│   ├── subtitle_remover.py    # 去字幕 + 去水印
+│   ├── scene_detector.py      # 分镜检测与分割
+│   ├── audio_extractor.py     # 音频提取
+│   ├── transcriber.py         # Whisper 语音转文字
+│   └── video_downloader.py    # yt-dlp 下载
+└── utils/
+    ├── batch_processor.py     # 批量处理
+    ├── file_utils.py          # 文件工具
+    └── jianying_draft_exporter.py  # 剪映草稿导出
 ```
 
 ## 常见问题
 
-### Q: 第一次运行很慢？
-A: Whisper 模型首次使用时需要下载（约 150MB），之后会缓存到本地
+**首次运行慢？** Whisper 模型首次下载约 150MB，之后会缓存。
 
-### Q: 下载抖音视频失败？
-A: 抖音平台限制，无法直接下载。请使用：
-1. **抖音官方下载**（推荐）：在 App 中点击分享 → 保存本地
-2. **第三方下载工具**：使用专门的抖音下载器
-3. 下载后使用本工具分析：`./run.sh video.mp4`
+**抖音下载失败？** 抖音无法直接下载，请在 App 中「分享 → 保存本地」后处理。
 
-### Q: 下载功能需要什么？
-A: 工具会自动安装 yt-dlp。如果失败，手动运行：`pip install -U yt-dlp`
+**分镜太多/太少？** 调整 `-t` 参数，值越小分镜越多。
 
-### Q: 如何提高语音识别准确度？
-A: 使用更大的模型，如 `--whisper-model medium`
+**路径含空格报错？** 用英文双引号包裹整个路径：`./run.sh "path/with spaces/video.mp4"`
 
-### Q: 分镜太多或太少？
-A: 调整 `-t` 参数，值越小分镜越多，值越大分镜越少
+## 技术栈
 
-### Q: 文件路径里有空格，为什么命令报“找不到视频文件”？
-A: 请用英文半角双引号包住整个路径，例如：
-`./run.sh "/Users/apple1/Desktop/chai_shi_pin/test_videos/“老天爷 请你再给这个小孩一点运气吧”.mp4" --scenes-only`
-
-### Q: 可以直接粘贴抖音分享文本吗？
-A: 工具会尝试提取链接，但抖音无法直接下载。建议使用官方下载功能后再分析
-
-## 文档
-
-- [架构文档](docs/ARCHITECTURE.md) - 项目架构和扩展指南
-- [功能状态](docs/FEATURES_STATUS.md) - 所有功能的实现状态和使用方法
-- [重构计划](docs/REFACTORING_PLAN.md) - 代码结构优化方案
-- [API 文档](docs/API.md) - 编程接口文档
-- [贡献指南](docs/CONTRIBUTING.md) - 如何贡献代码
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
+Python 3.12 · OpenCV (scenedetect) · OpenAI Whisper · MoviePy · pydub · yt-dlp
 
 ## 许可证
 

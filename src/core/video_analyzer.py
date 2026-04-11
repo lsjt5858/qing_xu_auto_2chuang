@@ -6,26 +6,18 @@ import json
 from pathlib import Path
 from datetime import datetime
 
+from config.settings import DEFAULT_OUTPUT_DIR, OUTPUT, TRANSCRIPTION
+
 from .scene_detector import SceneDetector
 from .audio_extractor import AudioExtractor
 from .transcriber import Transcriber
 from .subtitle_remover import SubtitleRemover
 
-# 新功能模块（待实现）
-from .subtitle_generator import SubtitleGenerator
-from .subtitle_translator import SubtitleTranslator
-from .video_compressor import VideoCompressor
-from .format_converter import FormatConverter
-from .video_enhancer import VideoEnhancer
-from .audio_processor import AudioProcessor
-from .content_analyzer import ContentAnalyzer
-from .smart_editor import SmartEditor
-
 
 class VideoAnalyzer:
     """视频分析器 - 整合分镜、音频提取、语音转文字"""
     
-    def __init__(self, video_path, base_output_dir="output"):
+    def __init__(self, video_path, base_output_dir=DEFAULT_OUTPUT_DIR):
         """
         初始化视频分析器
         
@@ -102,7 +94,7 @@ class VideoAnalyzer:
         
         # 分割视频
         if scene_list:
-            scenes_dir = os.path.join(self.output_dir, "scenes")
+            scenes_dir = os.path.join(self.output_dir, OUTPUT["scenes_folder"])
             detector.split_video(self.video_path, scene_list, scenes_dir)
             print(f"✓ 场景视频已保存到: {scenes_dir}")
         
@@ -117,7 +109,7 @@ class VideoAnalyzer:
         """
         print("\n=== 步骤 2: 提取音频 ===")
         
-        audio_path = os.path.join(self.output_dir, "audio.mp3")
+        audio_path = os.path.join(self.output_dir, OUTPUT["audio_filename"])
         extractor = AudioExtractor()
         
         result = extractor.extract(self.video_path, audio_path)
@@ -129,7 +121,7 @@ class VideoAnalyzer:
         
         return result
     
-    def transcribe_audio(self, audio_path, model_size="base"):
+    def transcribe_audio(self, audio_path, model_size=TRANSCRIPTION["model"]):
         """
         转录音频为文字
         
@@ -149,13 +141,13 @@ class VideoAnalyzer:
         result = transcriber.transcribe(audio_path)
         
         # 保存完整文案
-        transcript_path = os.path.join(self.output_dir, "transcript.txt")
+        transcript_path = os.path.join(self.output_dir, OUTPUT["transcript_filename"])
         with open(transcript_path, "w", encoding="utf-8") as f:
             f.write(result["text"])
         print(f"✓ 完整文案已保存到: {transcript_path}")
         
         # 保存带时间戳的文案
-        detailed_path = os.path.join(self.output_dir, "transcript_detailed.json")
+        detailed_path = os.path.join(self.output_dir, OUTPUT["transcript_detailed_filename"])
         with open(detailed_path, "w", encoding="utf-8") as f:
             json.dump(result["segments"], f, ensure_ascii=False, indent=2)
         print(f"✓ 详细文案（带时间戳）已保存到: {detailed_path}")
@@ -194,7 +186,7 @@ class VideoAnalyzer:
             "transcript_segments": transcript_result["segments"] if transcript_result else []
         }
         
-        report_path = os.path.join(self.output_dir, "report.json")
+        report_path = os.path.join(self.output_dir, OUTPUT["report_filename"])
         with open(report_path, "w", encoding="utf-8") as f:
             json.dump(report, f, ensure_ascii=False, indent=2)
         
@@ -216,6 +208,8 @@ class VideoAnalyzer:
             str: 生成的字幕文件路径
         """
         print("\n=== 生成字幕文件 ===")
+        from .subtitle_generator import SubtitleGenerator
+
         generator = SubtitleGenerator()
         
         output_path = os.path.join(self.output_dir, f"subtitle.{format}")
@@ -239,6 +233,8 @@ class VideoAnalyzer:
             str: 翻译后的字幕文件路径
         """
         print(f"\n=== 翻译字幕到 {target_language} ===")
+        from .subtitle_translator import SubtitleTranslator
+
         translator = SubtitleTranslator()
         
         output_path = os.path.join(
@@ -260,6 +256,8 @@ class VideoAnalyzer:
             dict: 压缩结果信息
         """
         print("\n=== 压缩视频 ===")
+        from .video_compressor import VideoCompressor
+
         compressor = VideoCompressor()
         
         output_path = os.path.join(self.output_dir, "video_compressed.mp4")
@@ -279,6 +277,8 @@ class VideoAnalyzer:
             str: 转换后的视频路径
         """
         print(f"\n=== 转换格式到 {target_format} ===")
+        from .format_converter import FormatConverter
+
         converter = FormatConverter()
         
         output_path = os.path.join(self.output_dir, f"video.{target_format}")
@@ -300,6 +300,8 @@ class VideoAnalyzer:
             str: 增强后的视频路径
         """
         print("\n=== 增强视频质量 ===")
+        from .video_enhancer import VideoEnhancer
+
         enhancer = VideoEnhancer()
         
         output_path = os.path.join(self.output_dir, "video_enhanced.mp4")
@@ -323,6 +325,8 @@ class VideoAnalyzer:
             dict: 处理结果
         """
         print("\n=== 处理音频 ===")
+        from .audio_processor import AudioProcessor
+
         processor = AudioProcessor()
         
         audio_path = os.path.join(self.output_dir, "audio.mp3")
@@ -360,6 +364,8 @@ class VideoAnalyzer:
             dict: 分析结果
         """
         print("\n=== 分析视频内容 ===")
+        from .content_analyzer import ContentAnalyzer
+
         analyzer = ContentAnalyzer()
         
         result = {}
@@ -388,6 +394,8 @@ class VideoAnalyzer:
             dict: 编辑结果
         """
         print("\n=== 智能编辑 ===")
+        from .smart_editor import SmartEditor
+
         editor = SmartEditor()
         
         result = {}
