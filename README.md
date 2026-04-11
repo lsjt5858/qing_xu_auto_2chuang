@@ -34,7 +34,32 @@ pip install -r requirements.txt
 brew install ffmpeg   # macOS
 ```
 
+## 两个入口
+
+| 入口 | 用途 |
+|------|------|
+| `./run.sh ...` | 从原始视频开始跑完整流程 |
+| `python3 src/utils/jianying_draft_exporter.py ...` | 从已有的 output 目录直接导出/重组剪映草稿 |
+
+> 路径含空格时，用英文双引号包裹整个路径。
+
 ## 快速开始
+
+### 4 条最常用的命令
+
+```bash
+# 1. 单个视频完整分析
+./run.sh "/path/to/video.mp4"
+
+# 2. 分析后直接导入剪映
+./run.sh "/path/to/video.mp4" --export-jianying
+
+# 3. 分析 + 用视频池混剪后导入剪映
+./run.sh "/path/to/video.mp4" --compose-with-pool "/path/to/shot_pool"
+
+# 4. 已有 output 目录，直接混剪并导剪映
+python3 src/utils/jianying_draft_exporter.py "output/某个分析结果目录" --compose-with-pool "/path/to/shot_pool"
+```
 
 ### 完整处理流程
 
@@ -79,9 +104,34 @@ brew install ffmpeg   # macOS
 ### 导入剪映
 
 ```bash
-# 将分镜导出为剪映草稿工程
-python -m src.utils.jianying_draft_exporter output/某个视频目录
+# 从原始视频处理并导出剪映草稿
+./run.sh video.mp4 --export-jianying
+
+# 已有 output 目录，直接导出剪映草稿
+python3 src/utils/jianying_draft_exporter.py "output/某个视频目录"
 ```
+
+### 视频池混剪
+
+给一个「视频身」素材池目录，自动按字幕时间段匹配合适的镜头，生成混剪时间线：
+
+```bash
+# 从原始视频开始，保留视频头，用视频池补尾
+./run.sh "/path/to/video.mp4" --compose-with-pool "/path/to/shot_pool"
+
+# 已有 output 目录，直接重组混剪
+python3 src/utils/jianying_draft_exporter.py "output/某个目录" --compose-with-pool "/path/to/shot_pool"
+```
+
+混剪逻辑：
+
+- 总时长以 `audio.mp3` 为准
+- 默认保留原视频第一个分镜作为「视频头」
+- 后半段按字幕时间段从视频池里找时长接近的镜头
+- 视频池会递归扫描目录及子目录下所有视频
+- 尽量避免连续两段用同一个素材
+
+> 当前生成的是「混剪后的剪映草稿」，不是直接渲染成 mp4。你会在剪映里看到排好的时间线，再从剪映导出成片。
 
 ### 下载视频
 
@@ -115,6 +165,8 @@ python -m src.utils.jianying_draft_exporter output/某个视频目录
 | `--scenes-only` | 只做分镜（仍会先去字幕） |
 | `--audio-only` | 只做音频+文案（仍会先去字幕） |
 | `--whisper-model` | `tiny` / `base`（默认）/ `small` / `medium` / `large` |
+| `--export-jianying` | 处理完成后自动导出剪映草稿 |
+| `--compose-with-pool` | 指定视频池目录，混剪后导出剪映草稿 |
 
 ## 输出结构
 

@@ -360,9 +360,98 @@ def _update_meta(draft_dir: Path, draft_id: str, draft_name: str, duration_us: i
             "tm_draft_create": timestamp,
             "tm_draft_modified": timestamp,
             "tm_duration": duration_us,
+            "draft_timeline_materials_size": meta.get(
+                "draft_timeline_materials_size",
+                meta.get("draft_timeline_materials_size_", 0),
+            ),
         }
     )
     _dump_json(meta_path, meta, pretty=True)
+
+
+def _build_root_meta_entry(draft_dir: Path, meta: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "cloud_draft_cover": False,
+        "cloud_draft_sync": False,
+        "draft_cloud_last_action_download": meta.get("draft_cloud_last_action_download", False),
+        "draft_cloud_purchase_info": meta.get("draft_cloud_purchase_info", ""),
+        "draft_cloud_template_id": meta.get("draft_cloud_template_id", ""),
+        "draft_cloud_tutorial_info": meta.get("draft_cloud_tutorial_info", ""),
+        "draft_cloud_videocut_purchase_info": meta.get(
+            "draft_cloud_videocut_purchase_info",
+            "",
+        ),
+        "draft_cover": str(draft_dir / "draft_cover.jpg"),
+        "draft_fold_path": str(draft_dir),
+        "draft_id": meta["draft_id"],
+        "draft_is_ai_shorts": meta.get("draft_is_ai_shorts", False),
+        "draft_is_cloud_temp_draft": False,
+        "draft_is_invisible": meta.get("draft_is_invisible", False),
+        "draft_is_web_article_video": False,
+        "draft_json_file": str(draft_dir / "draft_info.json"),
+        "draft_name": meta.get("draft_name", draft_dir.name),
+        "draft_new_version": meta.get("draft_new_version", ""),
+        "draft_root_path": str(draft_dir.parent),
+        "draft_timeline_materials_size": meta.get(
+            "draft_timeline_materials_size",
+            meta.get("draft_timeline_materials_size_", 0),
+        ),
+        "draft_type": meta.get("draft_type", ""),
+        "draft_web_article_video_enter_from": "",
+        "streaming_edit_draft_ready": True,
+        "tm_draft_cloud_completed": meta.get("tm_draft_cloud_completed", ""),
+        "tm_draft_cloud_entry_id": meta.get("tm_draft_cloud_entry_id", -1),
+        "tm_draft_cloud_modified": meta.get("tm_draft_cloud_modified", 0),
+        "tm_draft_cloud_parent_entry_id": meta.get("tm_draft_cloud_parent_entry_id", -1),
+        "tm_draft_cloud_space_id": meta.get("tm_draft_cloud_space_id", -1),
+        "tm_draft_cloud_user_id": meta.get("tm_draft_cloud_user_id", -1),
+        "tm_draft_create": meta.get("tm_draft_create", _now_us()),
+        "tm_draft_modified": meta.get("tm_draft_modified", _now_us()),
+        "tm_draft_removed": meta.get("tm_draft_removed", 0),
+        "tm_duration": meta.get("tm_duration", 0),
+    }
+
+
+def _update_root_meta(draft_root: Path, draft_dir: Path) -> None:
+    root_meta_path = draft_root / "root_meta_info.json"
+    if root_meta_path.exists():
+        root_meta = _load_json(root_meta_path)
+    else:
+        root_meta = {
+            "all_draft_store": [],
+            "draft_ids": 0,
+            "root_path": str(draft_root),
+        }
+
+    meta = _load_json(draft_dir / "draft_meta_info.json")
+    stores = [
+        item
+        for item in root_meta.get("all_draft_store", [])
+        if not (
+            isinstance(item, dict)
+            and (
+                item.get("draft_id") == meta.get("draft_id")
+                or item.get("draft_fold_path") == str(draft_dir)
+            )
+        )
+    ]
+    stores_before = len(stores)
+
+    stores.append(_build_root_meta_entry(draft_dir, meta))
+    stores.sort(key=lambda item: item.get("tm_draft_modified", 0), reverse=True)
+
+    existing_draft_ids = root_meta.get("draft_ids", 0)
+    if not isinstance(existing_draft_ids, int):
+        existing_draft_ids = stores_before
+
+    root_meta.update(
+        {
+            "all_draft_store": stores,
+            "draft_ids": max(existing_draft_ids, stores_before) + 1,
+            "root_path": str(draft_root),
+        }
+    )
+    _dump_json(root_meta_path, root_meta, pretty=True)
 
 
 def _write_timeline_files(draft_dir: Path, draft_id: str, draft_content: dict[str, Any]) -> None:
@@ -609,6 +698,7 @@ def export_to_jianying_draft(
         _dump_json(draft_dir / name, base_info, pretty=True)
 
     _update_meta(draft_dir, draft_id, final_name, timeline_duration_us)
+    _update_root_meta(draft_root, draft_dir)
     _write_timeline_files(draft_dir, draft_id, base_info)
     _try_generate_cover(draft_dir, timeline_clips[0].source_path)
     return draft_dir
