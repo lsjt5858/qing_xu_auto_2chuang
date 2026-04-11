@@ -32,9 +32,9 @@ class TestHeadTailComposer(unittest.TestCase):
         )
         shot_pool = ShotPoolIndex(
             [
-                ShotCandidate(Path("/tmp/pool_a.mp4"), 2_100_000, 1920, 1080),
-                ShotCandidate(Path("/tmp/pool_b.mp4"), 700_000, 1920, 1080),
-                ShotCandidate(Path("/tmp/pool_c.mp4"), 1_700_000, 1920, 1080),
+                ShotCandidate(Path("/tmp/pool_a.mp4"), 2_100_000, 1920, 1080, "group-a", 1),
+                ShotCandidate(Path("/tmp/pool_b.mp4"), 2_300_000, 1920, 1080, "group-b", 1),
+                ShotCandidate(Path("/tmp/pool_c.mp4"), 4_100_000, 1920, 1080, "group-c", 1),
             ]
         )
         composer = HeadTailComposer(
@@ -44,15 +44,11 @@ class TestHeadTailComposer(unittest.TestCase):
 
         timeline = composer.compose(artifacts)
 
-        self.assertEqual(len(timeline), 4)
+        self.assertEqual(len(timeline), 2)
         self.assertEqual(timeline[0].role, "head")
         self.assertEqual(timeline[0].timeline_duration_us, 2_000_000)
         self.assertEqual(timeline[1].timeline_start_us, 2_000_000)
-        self.assertEqual(timeline[1].timeline_duration_us, 2_000_000)
-        self.assertEqual(timeline[2].timeline_start_us, 4_000_000)
-        self.assertEqual(timeline[2].timeline_duration_us, 500_000)
-        self.assertEqual(timeline[3].timeline_start_us, 4_500_000)
-        self.assertEqual(timeline[3].timeline_duration_us, 1_500_000)
+        self.assertEqual(timeline[1].timeline_duration_us, 4_000_000)
         self.assertTrue(all(isinstance(item, TimelineClip) for item in timeline))
 
 

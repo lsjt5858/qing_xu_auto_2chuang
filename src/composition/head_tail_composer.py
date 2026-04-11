@@ -3,6 +3,7 @@ Compose a new timeline by keeping the original head and filling the rest from a 
 """
 from __future__ import annotations
 
+from collections import deque
 import json
 import random
 from dataclasses import asdict, dataclass
@@ -18,6 +19,8 @@ class CompositionSettings:
     head_mode: str = "first-scene"
     head_duration_us: int | None = None
     random_seed: int | None = None
+    min_visual_slot_us: int = 2_200_000
+    recent_group_window: int = 4
 
 
 @dataclass(frozen=True)
@@ -60,10 +63,17 @@ class HeadTailComposer:
             return timeline
 
         last_pool_path: Path | None = None
+        used_paths: set[Path] = set()
+        used_groups: set[str] = set()
+        recent_groups: deque[str] = deque(maxlen=max(1, self.settings.recent_group_window))
+
         for slot in self._build_tail_slots(artifacts, head_duration_us, total_duration_us):
             candidate = self.shot_pool.pick(
                 slot.duration_us,
                 exclude_paths={last_pool_path} if last_pool_path else set(),
+                used_paths=used_paths,
+                recent_groups=set(recent_groups),
+                used_groups=used_groups,
                 rng=self.rng,
             )
             source_max_offset = max(0, candidate.duration_us - slot.duration_us)
@@ -84,6 +94,9 @@ class HeadTailComposer:
                 )
             )
             last_pool_path = candidate.path
+            used_paths.add(candidate.path)
+            used_groups.add(candidate.group_key)
+            recent_groups.append(candidate.group_key)
 
         return timeline
 
@@ -121,9 +134,6 @@ class HeadTailComposer:
         head_duration_us: int,
         total_duration_us: int,
     ) -> list[_TimelineSlot]:
-        slots: list[_TimelineSlot] = []
-        cursor = head_duration_us
-
         if not artifacts.transcript_segments:
             return [
                 _TimelineSlot(
@@ -133,40 +143,60 @@ class HeadTailComposer:
                 )
             ]
 
-        for segment in artifacts.transcript_segments:
-            seg_start = max(segment.start_us, head_duration_us)
-            seg_end = min(segment.end_us, total_duration_us)
-            if seg_end <= seg_start:
+        boundaries = sorted(
+            {
+                min(max(segment.end_us, head_duration_us), total_duration_us)
+                for segment in artifacts.transcript_segments
+                if segment.end_us > head_duration_us
+            }
+        )
+        boundaries.append(total_duration_us)
+
+        slots: list[_TimelineSlot] = []
+        slot_start = head_duration_us
+        for boundary in boundaries:
+            if boundary <= slot_start:
+                continue
+            current_duration = boundary - slot_start
+            if current_duration < self.settings.min_visual_slot_us and boundary != total_duration_us:
                 continue
 
-            if seg_start > cursor:
-                slots.append(
-                    _TimelineSlot(
-                        start_us=cursor,
-                        duration_us=seg_start - cursor,
-                        kind="gap",
-                    )
-                )
-                cursor = seg_start
-
-            if seg_end > cursor:
-                slots.append(
-                    _TimelineSlot(
-                        start_us=cursor,
-                        duration_us=seg_end - cursor,
-                        kind="subtitle",
-                        text=segment.text,
-                    )
-                )
-                cursor = seg_end
-
-        if cursor < total_duration_us:
+            label = self._label_for_range(artifacts, slot_start, boundary)
             slots.append(
                 _TimelineSlot(
-                    start_us=cursor,
-                    duration_us=total_duration_us - cursor,
-                    kind="tail",
+                    start_us=slot_start,
+                    duration_us=current_duration,
+                    kind="subtitle",
+                    text=label,
                 )
             )
+            slot_start = boundary
+
+        if slot_start < total_duration_us:
+            remaining = total_duration_us - slot_start
+            if slots and remaining < max(700_000, self.settings.min_visual_slot_us // 2):
+                previous = slots[-1]
+                slots[-1] = _TimelineSlot(
+                    start_us=previous.start_us,
+                    duration_us=previous.duration_us + remaining,
+                    kind=previous.kind,
+                    text=previous.text,
+                )
+            else:
+                slots.append(
+                    _TimelineSlot(
+                        start_us=slot_start,
+                        duration_us=remaining,
+                        kind="tail",
+                    )
+                )
 
         return [slot for slot in slots if slot.duration_us > 0]
+
+    def _label_for_range(self, artifacts: AnalysisArtifacts, start_us: int, end_us: int) -> str:
+        texts = [
+            segment.text
+            for segment in artifacts.transcript_segments
+            if segment.end_us > start_us and segment.start_us < end_us
+        ]
+        return " ".join(texts[:2]).strip()

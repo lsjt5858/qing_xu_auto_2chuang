@@ -9,6 +9,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from src.utils.audio_silence import load_audio_silence_profile
+from src.utils.subtitle_segmentation import split_transcript_segments
+from src.utils.text_normalizer import normalize_chinese_text
+
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".mov"}
@@ -72,6 +76,7 @@ class AnalysisArtifacts:
     audio_metadata: MediaMetadata | None
     scenes: tuple[SceneSegment, ...]
     transcript_segments: tuple[TranscriptSegment, ...]
+    english_transcript_segments: tuple[TranscriptSegment, ...] = ()
 
     @property
     def total_duration_us(self) -> int:
@@ -79,6 +84,7 @@ class AnalysisArtifacts:
             self.audio_metadata.duration_us if self.audio_metadata else 0,
             max((scene.end_us for scene in self.scenes), default=0),
             max((segment.end_us for segment in self.transcript_segments), default=0),
+            max((segment.end_us for segment in self.english_transcript_segments), default=0),
         ]
         return max(candidates, default=0)
 
@@ -163,7 +169,26 @@ def probe_media(path: Path) -> MediaMetadata:
     )
 
 
+def _load_transcript_source(
+    output_dir: Path,
+    report: dict[str, Any],
+    *,
+    file_candidates: list[str],
+    report_keys: list[str],
+) -> list[dict[str, Any]]:
+    for filename in file_candidates:
+        path = output_dir / filename
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    for key in report_keys:
+        if report.get(key):
+            return report[key]
+    return []
+
+
 def load_analysis_artifacts(output_dir: str | Path) -> AnalysisArtifacts:
+    if isinstance(output_dir, str):
+        output_dir = output_dir.strip()
     output_dir = Path(output_dir).expanduser().resolve()
     if not output_dir.exists():
         raise FileNotFoundError(f"Output directory not found: {output_dir}")
@@ -220,20 +245,45 @@ def load_analysis_artifacts(output_dir: str | Path) -> AnalysisArtifacts:
         )
         cursor = end_us
 
-    transcript_source: list[dict[str, Any]] = []
-    transcript_path = output_dir / "transcript_detailed.json"
-    if transcript_path.exists():
-        transcript_source = json.loads(transcript_path.read_text(encoding="utf-8"))
-    elif report.get("transcript_segments"):
-        transcript_source = report["transcript_segments"]
+    silence_profile = load_audio_silence_profile(audio_path) if audio_path and audio_path.exists() else None
+    transcript_source = split_transcript_segments(
+        _load_transcript_source(
+            output_dir,
+            report,
+            file_candidates=["transcript_detailed.json"],
+            report_keys=["transcript_segments"],
+        ),
+        silence_profile=silence_profile,
+    )
+    english_transcript_source = _load_transcript_source(
+        output_dir,
+        report,
+        file_candidates=[
+            "transcript_english_detailed.json",
+            "transcript_en_detailed.json",
+        ],
+        report_keys=[
+            "english_transcript_segments",
+            "transcript_segments_en",
+        ],
+    )
 
     transcript_segments = tuple(
         TranscriptSegment(
             start_us=to_us(item.get("start")),
             end_us=to_us(item.get("end")),
-            text=str(item.get("text", "")).strip(),
+            text=normalize_chinese_text(str(item.get("text", "")).strip()),
         )
         for item in transcript_source
+        if str(item.get("text", "")).strip()
+    )
+    english_transcript_segments = tuple(
+        TranscriptSegment(
+            start_us=to_us(item.get("start")),
+            end_us=to_us(item.get("end")),
+            text=str(item.get("text", "")).strip(),
+        )
+        for item in english_transcript_source
         if str(item.get("text", "")).strip()
     )
 
@@ -247,4 +297,5 @@ def load_analysis_artifacts(output_dir: str | Path) -> AnalysisArtifacts:
         audio_metadata=audio_metadata,
         scenes=tuple(scenes),
         transcript_segments=transcript_segments,
+        english_transcript_segments=english_transcript_segments,
     )

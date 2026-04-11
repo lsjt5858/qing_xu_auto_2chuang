@@ -59,6 +59,8 @@ class BatchProcessor:
             export_kwargs["template_dir"] = args.template_dir
         if getattr(args, "draft_name", None):
             export_kwargs["draft_name"] = args.draft_name
+        if getattr(args, "style_template", None):
+            export_kwargs["style_template"] = args.style_template
 
         draft_dir = export_to_jianying_draft(artifacts, **export_kwargs)
         print(f"✓ 剪映草稿已导出到: {draft_dir}")

@@ -97,6 +97,12 @@ output/视频名_时间戳/
 ./run.sh "/path/to/video.mp4" --export-jianying
 ```
 
+默认会套用 `emotion` 模版，也就是“情绪类视频模版”：
+
+- 中文字幕走下方 `sticker` 轨
+- 英文字幕走上方 `sticker` 轨
+- 字号、描边、位置沿用参考草稿 `0406-03`
+
 ### 6. 用视频池自动组合后导入剪映
 
 ```bash
@@ -166,6 +172,7 @@ python3 src/utils/jianying_draft_exporter.py \
 | `--compose-with-pool` | 使用视频池自动补尾并导出剪映 |
 | `--head-mode` | `first-scene / fixed-seconds / none` |
 | `--head-duration` | `fixed-seconds` 模式下保留的秒数 |
+| `--style-template` | `emotion / basic`，默认 `emotion` |
 | `--draft-name` | 导出的剪映草稿名 |
 | `--draft-root` | 剪映草稿箱目录，默认使用本机目录 |
 

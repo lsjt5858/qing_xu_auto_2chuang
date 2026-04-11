@@ -12,7 +12,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.models import AnalysisArtifacts, TimelineClip, probe_media
+from src.models import AnalysisArtifacts, TimelineClip, TranscriptSegment, probe_media
+
+from .jianying_styles import JianyingStyleTemplate, SubtitleLayerStyle, resolve_style_template
 
 
 DEFAULT_DRAFT_ROOT = Path(
@@ -164,6 +166,85 @@ def _make_audio_material(material_id: str, path: str, name: str, duration_us: in
     }
 
 
+def _make_placeholder_info(placeholder_id: str) -> dict[str, Any]:
+    return {
+        "res_path": "",
+        "error_path": "",
+        "type": "placeholder_info",
+        "meta_type": "none",
+        "res_text": "",
+        "id": placeholder_id,
+        "error_text": "",
+    }
+
+
+def _make_canvas(canvas_id: str) -> dict[str, Any]:
+    return {
+        "source_platform": 0,
+        "type": "canvas_color",
+        "blur": 0,
+        "color": "",
+        "album_image": "",
+        "image_id": "",
+        "image": "",
+        "image_name": "",
+        "team_id": "",
+        "id": canvas_id,
+    }
+
+
+def _make_material_color(color_id: str) -> dict[str, Any]:
+    return {
+        "gradient_colors": [],
+        "id": color_id,
+        "gradient_angle": 90,
+        "width": 0,
+        "gradient_percents": [],
+        "height": 0,
+        "solid_color": "",
+        "is_color_clip": False,
+        "is_gradient": False,
+    }
+
+
+def _make_sound_channel_mapping(mapping_id: str) -> dict[str, Any]:
+    return {
+        "id": mapping_id,
+        "is_config_open": False,
+        "audio_channel_mapping": 0,
+        "type": "none",
+    }
+
+
+def _make_beats(beats_id: str) -> dict[str, Any]:
+    return {
+        "enable_ai_beats": False,
+        "user_beats": [],
+        "gear_count": 0,
+        "ai_beats": {
+            "beats_path": "",
+            "melody_url": "",
+            "melody_path": "",
+            "beat_speed_infos": [],
+            "beats_url": "",
+            "melody_percents": [0.6],
+        },
+        "gear": 404,
+        "mode": 404,
+        "type": "beats",
+        "id": beats_id,
+    }
+
+
+def _make_material_animation(animation_id: str) -> dict[str, Any]:
+    return {
+        "id": animation_id,
+        "type": "sticker_animation",
+        "animations": [],
+        "multi_language_current": "none",
+    }
+
+
 def _make_text_material(material_id: str, text: str, *, fixed_width: int) -> dict[str, Any]:
     text = text.strip()
     content = {
@@ -237,6 +318,92 @@ def _make_text_material(material_id: str, text: str, *, fixed_width: int) -> dic
     }
 
 
+def _make_styled_subtitle_material(
+    material_id: str,
+    text: str,
+    *,
+    style: SubtitleLayerStyle,
+    fixed_width: int,
+) -> dict[str, Any]:
+    text = text.strip()
+    content = {
+        "styles": [
+            {
+                "fill": {
+                    "alpha": 1.0,
+                    "content": {
+                        "render_type": "solid",
+                        "solid": {"alpha": 1.0, "color": [1.0, 1.0, 1.0]},
+                    },
+                },
+                "font": {"id": "", "path": ""},
+                "range": [0, len(text)],
+                "size": style.font_size,
+                "strokes": [
+                    {
+                        "alpha": 1.0,
+                        "content": {
+                            "render_type": "solid",
+                            "solid": {"alpha": 1.0, "color": [0.0, 0.0, 0.0]},
+                        },
+                        "width": style.border_width,
+                    }
+                ],
+            }
+        ],
+        "text": text,
+    }
+    return {
+        "id": material_id,
+        "type": style.material_type,
+        "content": json.dumps(content, ensure_ascii=False),
+        "alignment": 1,
+        "letter_spacing": 0,
+        "line_spacing": style.line_spacing,
+        "line_feed": 1,
+        "line_max_width": style.line_max_width,
+        "force_apply_line_max_width": False,
+        "fixed_width": fixed_width if style.fixed_width < 0 else style.fixed_width,
+        "fixed_height": -1,
+        "font_category_id": "",
+        "font_category_name": "",
+        "font_id": "",
+        "font_name": "",
+        "font_path": "",
+        "font_resource_id": "",
+        "font_size": style.font_size,
+        "font_source_platform": 0,
+        "font_team_id": "",
+        "font_title": "none",
+        "font_url": "",
+        "fonts": [],
+        "text_color": style.text_color,
+        "text_size": style.text_size,
+        "border_color": style.border_color,
+        "border_alpha": 1,
+        "border_width": style.border_width,
+        "background_alpha": 1,
+        "background_color": "",
+        "background_style": 0,
+        "background_height": 0.28 if style.material_type == "subtitle" else 0.14,
+        "background_width": 0.28 if style.material_type == "subtitle" else 0.14,
+        "background_round_radius": 0.4 if style.material_type == "subtitle" else 0,
+        "background_horizontal_offset": 0,
+        "background_vertical_offset": 0,
+        "check_flag": 7 if style.material_type == "subtitle" else 15,
+        "group_id": style.group_id,
+        "language": style.language,
+        "style_name": "",
+        "multi_language_current": "none",
+        "sub_type": 1,
+        "typesetting": 0,
+        "use_effect_default_color": True,
+        "translate_original_text": text,
+        "recognize_text": text,
+        "add_type": 1,
+    }
+
+
 def _base_segment(
     segment_id: str,
     material_id: str,
@@ -247,9 +414,12 @@ def _base_segment(
     volume: float,
     speed_id: str | None,
     source_timerange: dict[str, int] | None,
+    extra_material_refs: list[str] | None = None,
 ) -> dict[str, Any]:
     refs = [speed_id] if speed_id else []
-    return {
+    if extra_material_refs:
+        refs.extend(extra_material_refs)
+    segment = {
         "enable_adjust": True,
         "enable_color_correct_adjust": False,
         "enable_color_curves": True,
@@ -265,7 +435,6 @@ def _base_segment(
         "id": segment_id,
         "material_id": material_id,
         "target_timerange": {"start": start_us, "duration": duration_us},
-        "source_timerange": source_timerange,
         "speed": 1.0,
         "volume": volume,
         "extra_material_refs": refs,
@@ -273,6 +442,9 @@ def _base_segment(
         "keyframe_refs": [],
         "render_index": render_index,
     }
+    if source_timerange is not None:
+        segment["source_timerange"] = source_timerange
+    return segment
 
 
 def _make_visual_segment(
@@ -286,6 +458,7 @@ def _make_visual_segment(
     speed_id: str | None,
     source_timerange: dict[str, int] | None,
     transform_y: float = 0.0,
+    extra_material_refs: list[str] | None = None,
 ) -> dict[str, Any]:
     segment = _base_segment(
         segment_id,
@@ -296,6 +469,7 @@ def _make_visual_segment(
         volume=volume,
         speed_id=speed_id,
         source_timerange=source_timerange,
+        extra_material_refs=extra_material_refs,
     )
     segment.update(
         {
@@ -319,6 +493,7 @@ def _make_audio_segment(
     start_us: int,
     duration_us: int,
     speed_id: str,
+    extra_material_refs: list[str] | None = None,
 ) -> dict[str, Any]:
     segment = _base_segment(
         segment_id,
@@ -329,8 +504,67 @@ def _make_audio_segment(
         volume=1.0,
         speed_id=speed_id,
         source_timerange={"start": 0, "duration": duration_us},
+        extra_material_refs=extra_material_refs,
     )
     segment.update({"clip": None, "hdr_settings": None})
+    return segment
+
+
+def _make_subtitle_segment(
+    segment_id: str,
+    material_id: str,
+    start_us: int,
+    duration_us: int,
+    *,
+    render_index: int,
+    transform_y: float,
+    animation_id: str | None,
+) -> dict[str, Any]:
+    segment = _base_segment(
+        segment_id,
+        material_id,
+        start_us,
+        duration_us,
+        render_index=render_index,
+        volume=1.0,
+        speed_id=None,
+        source_timerange=None,
+        extra_material_refs=[animation_id] if animation_id else None,
+    )
+    segment.update(
+        {
+            "enable_adjust": False,
+            "enable_lut": False,
+            "enable_video_mask": True,
+            "clip": {
+                "alpha": 1.0,
+                "flip": {"horizontal": False, "vertical": False},
+                "rotation": 0.0,
+                "scale": {"x": 1.0, "y": 1.0},
+                "transform": {"x": 0.0, "y": transform_y},
+            },
+            "uniform_scale": {"on": True, "value": 1.0},
+            "responsive_layout": {
+                "vertical_pos_layout": 0,
+                "target_follow": "",
+                "enable": False,
+                "horizontal_pos_layout": 0,
+                "size_layout": 0,
+            },
+            "enable_mask_stroke": False,
+            "enable_adjust_mask": False,
+            "enable_color_adjust_pro": False,
+            "enable_mask_shadow": False,
+            "render_timerange": {"start": 0, "duration": 0},
+            "state": 0,
+            "source": "segmentsourcenormal",
+            "template_scene": "default",
+            "is_placeholder": False,
+            "is_loop": False,
+            "is_tone_modify": False,
+            "raw_segment_id": "",
+        }
+    )
     return segment
 
 
@@ -505,6 +739,166 @@ def _try_generate_cover(draft_dir: Path, source_video: Path) -> None:
         pass
 
 
+def _persist_generated_english_transcript(
+    output_dir: Path,
+    english_result: dict[str, Any],
+) -> None:
+    (output_dir / "transcript_english.txt").write_text(
+        english_result["text"],
+        encoding="utf-8",
+    )
+    _dump_json(
+        output_dir / "transcript_english_detailed.json",
+        english_result["segments"],
+        pretty=True,
+    )
+
+
+def _project_venv_python() -> Path | None:
+    candidate = Path(__file__).resolve().parents[2] / "venv" / "bin" / "python"
+    return candidate if candidate.exists() else None
+
+
+def _generate_english_transcript_with_project_venv(audio_path: Path) -> dict[str, Any] | None:
+    venv_python = _project_venv_python()
+    if venv_python is None:
+        return None
+
+    helper = """
+import contextlib
+import json
+import sys
+
+from src.core.transcriber import Transcriber
+
+with contextlib.redirect_stdout(sys.stderr):
+    result = Transcriber(model_size="base").translate_to_english(sys.argv[1])
+
+print(json.dumps(result, ensure_ascii=False))
+""".strip()
+
+    result = subprocess.run(
+        [str(venv_python), "-c", helper, str(audio_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=str(Path(__file__).resolve().parents[2]),
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+
+
+def _load_or_generate_english_segments(
+    artifacts: AnalysisArtifacts,
+    *,
+    style_template: JianyingStyleTemplate,
+) -> tuple[TranscriptSegment, ...]:
+    if style_template.english_layer is None:
+        return ()
+    if artifacts.english_transcript_segments:
+        return artifacts.english_transcript_segments
+    if not artifacts.audio_path or not artifacts.audio_path.exists():
+        return ()
+
+    try:
+        from src.core.transcriber import Transcriber
+
+        translator = Transcriber(model_size="base")
+        english_result = translator.translate_to_english(str(artifacts.audio_path))
+    except Exception as exc:
+        english_result = _generate_english_transcript_with_project_venv(artifacts.audio_path)
+        if english_result is None:
+            print(f"! 英文字幕生成失败，已回退为单语导出: {exc}")
+            return ()
+
+    _persist_generated_english_transcript(artifacts.output_dir, english_result)
+    return tuple(
+        TranscriptSegment(
+            start_us=int(round(float(item.get("start", 0.0)) * 1_000_000)),
+            end_us=int(round(float(item.get("end", 0.0)) * 1_000_000)),
+            text=str(item.get("text", "")).strip(),
+        )
+        for item in english_result.get("segments", [])
+        if str(item.get("text", "")).strip()
+    )
+
+
+def _build_subtitle_track(
+    *,
+    materials: dict[str, list[dict[str, Any]]],
+    transcripts: tuple[TranscriptSegment, ...],
+    style: SubtitleLayerStyle,
+    timeline_duration_us: int,
+    canvas_width: int,
+    canvas_height: int,
+) -> dict[str, Any] | None:
+    subtitle_segments: list[dict[str, Any]] = []
+    fixed_width = (
+        style.fixed_width
+        if style.fixed_width >= 0
+        else int(canvas_width * style.fixed_width_ratio)
+    )
+    for index, transcript in enumerate(transcripts):
+        text = transcript.text.strip()
+        if not text:
+            continue
+        start_us = transcript.start_us
+        duration_us = min(transcript.duration_us, max(0, timeline_duration_us - start_us))
+        if duration_us <= 0:
+            continue
+        material_id = _new_id()
+        if style.material_type == "text":
+            materials["texts"].append(
+                _make_text_material(material_id, text, fixed_width=fixed_width)
+            )
+            subtitle_segments.append(
+                _make_visual_segment(
+                    _new_id(),
+                    material_id,
+                    start_us,
+                    duration_us,
+                    render_index=style.render_index_base + index,
+                    volume=1.0,
+                    speed_id=None,
+                    source_timerange=None,
+                    transform_y=style.transform_y,
+                )
+            )
+            continue
+
+        materials["texts"].append(
+            _make_styled_subtitle_material(
+                material_id,
+                text,
+                style=style,
+                fixed_width=fixed_width,
+            )
+        )
+        animation_id = None
+        if style.needs_animation:
+            animation_id = _new_id()
+            materials["material_animations"].append(_make_material_animation(animation_id))
+        subtitle_segments.append(
+            _make_subtitle_segment(
+                _new_id(),
+                material_id,
+                start_us,
+                duration_us,
+                render_index=style.render_index_base + index,
+                transform_y=style.transform_y,
+                animation_id=animation_id,
+            )
+        )
+
+    if not subtitle_segments:
+        return None
+    return _make_track(style.track_type, style.track_name, subtitle_segments)
+
+
 def export_to_jianying_draft(
     artifacts: AnalysisArtifacts,
     *,
@@ -512,11 +906,13 @@ def export_to_jianying_draft(
     draft_root: str | Path = DEFAULT_DRAFT_ROOT,
     template_dir: str | Path = DEFAULT_TEMPLATE_DIR,
     draft_name: str | None = None,
+    style_template: str | None = None,
 ) -> Path:
     timeline_clips = timeline_clips or artifacts.default_timeline()
     if not timeline_clips:
         raise ValueError("No timeline clips available for export")
 
+    style_profile = resolve_style_template(style_template)
     draft_root = Path(draft_root).expanduser()
     template_dir = Path(template_dir).expanduser()
     requested_name = draft_name or f"chai_{artifacts.video_name}_{datetime.now():%H%M%S}"
@@ -547,12 +943,17 @@ def export_to_jianying_draft(
     if artifacts.audio_metadata:
         timeline_duration_us = max(timeline_duration_us, artifacts.audio_metadata.duration_us)
 
-    media_cache: dict[Path, tuple[str, Path, Any]] = {}
+    english_segments = _load_or_generate_english_segments(
+        artifacts,
+        style_template=style_profile,
+    )
+
+    media_cache: dict[Path, tuple[str, Path, Any, list[str]]] = {}
     canvas_width = 1920
     canvas_height = 1080
     video_segments: list[dict[str, Any]] = []
 
-    def ensure_video_material(source_path: Path) -> tuple[str, Path, Any]:
+    def ensure_video_material(source_path: Path) -> tuple[str, Path, Any, list[str]]:
         source_path = source_path.resolve()
         if source_path in media_cache:
             return media_cache[source_path]
@@ -576,11 +977,22 @@ def export_to_jianying_draft(
                 metadata.height or canvas_height,
             )
         )
-        media_cache[source_path] = (material_id, copied_path, metadata)
+        support_refs: list[str] = []
+        if style_profile.attach_media_support_materials:
+            placeholder_id = _new_id()
+            canvas_id = _new_id()
+            color_id = _new_id()
+            mapping_id = _new_id()
+            materials["placeholder_infos"].append(_make_placeholder_info(placeholder_id))
+            materials["canvases"].append(_make_canvas(canvas_id))
+            materials["material_colors"].append(_make_material_color(color_id))
+            materials["sound_channel_mappings"].append(_make_sound_channel_mapping(mapping_id))
+            support_refs.extend([placeholder_id, canvas_id, color_id, mapping_id])
+        media_cache[source_path] = (material_id, copied_path, metadata, support_refs)
         return media_cache[source_path]
 
     for clip in timeline_clips:
-        material_id, _, metadata = ensure_video_material(clip.source_path)
+        material_id, _, metadata, support_refs = ensure_video_material(clip.source_path)
         speed_id = _new_id()
         materials["speeds"].append(_make_speed(speed_id))
         source_duration_us = min(
@@ -600,6 +1012,7 @@ def export_to_jianying_draft(
                     "start": clip.source_start_us,
                     "duration": source_duration_us,
                 },
+                extra_material_refs=support_refs,
             )
         )
 
@@ -618,6 +1031,15 @@ def export_to_jianying_draft(
             )
         )
         materials["speeds"].append(_make_speed(audio_speed_id))
+        audio_support_refs: list[str] = []
+        if style_profile.attach_media_support_materials:
+            placeholder_id = _new_id()
+            beats_id = _new_id()
+            mapping_id = _new_id()
+            materials["placeholder_infos"].append(_make_placeholder_info(placeholder_id))
+            materials["beats"].append(_make_beats(beats_id))
+            materials["sound_channel_mappings"].append(_make_sound_channel_mapping(mapping_id))
+            audio_support_refs.extend([placeholder_id, beats_id, mapping_id])
         audio_segments.append(
             _make_audio_segment(
                 _new_id(),
@@ -625,42 +1047,36 @@ def export_to_jianying_draft(
                 0,
                 min(artifacts.audio_metadata.duration_us, timeline_duration_us),
                 audio_speed_id,
-            )
-        )
-
-    text_segments: list[dict[str, Any]] = []
-    fixed_width = int(canvas_width * 0.7) if canvas_width >= canvas_height else int(canvas_width * 0.82)
-    for transcript in artifacts.transcript_segments:
-        text = transcript.text.strip()
-        if not text:
-            continue
-        start_us = transcript.start_us
-        duration_us = min(transcript.duration_us, max(0, timeline_duration_us - start_us))
-        if duration_us <= 0:
-            continue
-        material_id = _new_id()
-        materials["texts"].append(
-            _make_text_material(material_id, text, fixed_width=fixed_width)
-        )
-        text_segments.append(
-            _make_visual_segment(
-                _new_id(),
-                material_id,
-                start_us,
-                duration_us,
-                render_index=15000,
-                volume=1.0,
-                speed_id=None,
-                source_timerange=None,
-                transform_y=-0.78,
+                extra_material_refs=audio_support_refs,
             )
         )
 
     tracks = [_make_track("video", "主视频", video_segments)]
     if audio_segments:
         tracks.append(_make_track("audio", "音频", audio_segments))
-    if text_segments:
-        tracks.append(_make_track("text", "字幕", text_segments))
+
+    chinese_track = _build_subtitle_track(
+        materials=materials,
+        transcripts=artifacts.transcript_segments,
+        style=style_profile.chinese_layer,
+        timeline_duration_us=timeline_duration_us,
+        canvas_width=canvas_width,
+        canvas_height=canvas_height,
+    )
+    if chinese_track:
+        tracks.append(chinese_track)
+
+    if english_segments and style_profile.english_layer is not None:
+        english_track = _build_subtitle_track(
+            materials=materials,
+            transcripts=english_segments,
+            style=style_profile.english_layer,
+            timeline_duration_us=timeline_duration_us,
+            canvas_width=canvas_width,
+            canvas_height=canvas_height,
+        )
+        if english_track:
+            tracks.append(english_track)
 
     timestamp = _now_us()
     platform = {
@@ -691,6 +1107,11 @@ def export_to_jianying_draft(
             "static_cover_image_path": "draft_cover.jpg",
             "platform": platform,
             "last_modified_platform": platform,
+            "extra_info": {
+                **(base_info.get("extra_info") or {}),
+                "style_template": style_profile.key,
+                "style_template_label": style_profile.label,
+            },
         }
     )
 

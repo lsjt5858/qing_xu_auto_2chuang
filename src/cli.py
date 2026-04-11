@@ -87,6 +87,10 @@ urls.txt 格式示例:
                        help="剪映草稿模板目录，默认使用项目内置模板")
     parser.add_argument("--draft-name",
                        help="导出的剪映草稿名称")
+    parser.add_argument("--style-template",
+                       choices=["emotion", "basic"],
+                       default="emotion",
+                       help="剪映导出使用的样式模板 (默认: emotion)")
     
     return parser
 

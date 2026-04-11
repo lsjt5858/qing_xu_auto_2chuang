@@ -49,6 +49,41 @@ class TestAnalysisArtifacts(unittest.TestCase):
             self.assertEqual(len(artifacts.transcript_segments), 2)
             self.assertEqual(artifacts.total_duration_us, 4_000_000)
 
+    def test_loads_optional_english_transcript_segments(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            (output_dir / "report.json").write_text(
+                json.dumps(
+                    {
+                        "video_name": "demo",
+                        "transcript_segments": [
+                            {"start": 0.0, "end": 1.0, "text": "我们都没有上帝视角"},
+                        ],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            (output_dir / "transcript_english_detailed.json").write_text(
+                json.dumps(
+                    [
+                        {"start": 0.0, "end": 1.0, "text": "We do not have God's perspective."},
+                    ],
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
+            artifacts = load_analysis_artifacts(output_dir)
+
+            self.assertEqual(len(artifacts.english_transcript_segments), 1)
+            self.assertEqual(
+                artifacts.english_transcript_segments[0].text,
+                "We do not have God's perspective.",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

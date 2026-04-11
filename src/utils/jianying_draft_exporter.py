@@ -17,6 +17,12 @@ from src.exporters.jianying import DEFAULT_DRAFT_ROOT, DEFAULT_TEMPLATE_DIR
 from src.models import load_analysis_artifacts
 
 
+def _clean_path_arg(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return value.strip()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Export an analysis output directory to a Jianying draft."
@@ -57,16 +63,27 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="Random seed for pool shot selection.",
     )
+    parser.add_argument(
+        "--style-template",
+        choices=["emotion", "basic"],
+        default="emotion",
+        help="Jianying subtitle/style template to apply.",
+    )
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
-    artifacts = load_analysis_artifacts(args.output_dir)
+    output_dir = _clean_path_arg(args.output_dir)
+    compose_with_pool = _clean_path_arg(args.compose_with_pool)
+    draft_root = _clean_path_arg(args.draft_root)
+    template_dir = _clean_path_arg(args.template_dir)
+
+    artifacts = load_analysis_artifacts(output_dir)
 
     timeline = None
-    if args.compose_with_pool:
-        shot_pool = ShotPoolIndex.from_directory(args.compose_with_pool)
+    if compose_with_pool:
+        shot_pool = ShotPoolIndex.from_directory(compose_with_pool)
         settings = CompositionSettings(
             head_mode=args.head_mode,
             head_duration_us=(
@@ -86,9 +103,10 @@ def main() -> None:
     draft_dir = export_to_jianying_draft(
         artifacts,
         timeline_clips=timeline,
-        draft_root=args.draft_root or DEFAULT_DRAFT_ROOT,
-        template_dir=args.template_dir or DEFAULT_TEMPLATE_DIR,
+        draft_root=draft_root or DEFAULT_DRAFT_ROOT,
+        template_dir=template_dir or DEFAULT_TEMPLATE_DIR,
         draft_name=args.draft_name,
+        style_template=args.style_template,
     )
     print(draft_dir)
 
