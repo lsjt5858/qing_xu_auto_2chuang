@@ -34,6 +34,11 @@ class ShotCandidate:
     height: int
     group_key: str
     scene_index: int | None = None
+    collection_key: str = ""
+
+    @property
+    def effective_collection_key(self) -> str:
+        return self.collection_key or str(self.path.parent.resolve())
 
 
 class ShotPoolIndex:
@@ -66,6 +71,7 @@ class ShotPoolIndex:
                     height=metadata.height,
                     group_key=group_key,
                     scene_index=scene_index,
+                    collection_key=str(path.parent.resolve()),
                 )
             )
 
@@ -81,12 +87,16 @@ class ShotPoolIndex:
         used_paths: set[Path] | None = None,
         recent_groups: set[str] | None = None,
         used_groups: set[str] | None = None,
+        recent_collections: set[str] | None = None,
+        used_collections: set[str] | None = None,
         rng: random.Random | None = None,
     ) -> ShotCandidate:
         exclude_paths = {path.resolve() for path in (exclude_paths or set())}
         used_paths = {path.resolve() for path in (used_paths or set())}
         recent_groups = set(recent_groups or set())
         used_groups = set(used_groups or set())
+        recent_collections = set(recent_collections or set())
+        used_collections = set(used_collections or set())
         rng = rng or random.Random()
 
         available = [shot for shot in self.shots if shot.path not in exclude_paths]
@@ -97,13 +107,30 @@ class ShotPoolIndex:
         if unused:
             available = unused
 
-        non_recent = [shot for shot in available if shot.group_key not in recent_groups]
-        if non_recent:
-            available = non_recent
-
-        fresh_groups = [shot for shot in available if shot.group_key not in used_groups]
-        if fresh_groups:
-            available = fresh_groups
+        preference_tiers = (
+            [
+                shot
+                for shot in available
+                if shot.group_key not in recent_groups
+                and shot.effective_collection_key not in recent_collections
+                and shot.group_key not in used_groups
+                and shot.effective_collection_key not in used_collections
+            ],
+            [
+                shot
+                for shot in available
+                if shot.group_key not in recent_groups
+                and shot.effective_collection_key not in recent_collections
+            ],
+            [shot for shot in available if shot.group_key not in recent_groups],
+            [shot for shot in available if shot.effective_collection_key not in recent_collections],
+            [shot for shot in available if shot.group_key not in used_groups],
+            [shot for shot in available if shot.effective_collection_key not in used_collections],
+        )
+        for tier in preference_tiers:
+            if tier:
+                available = tier
+                break
 
         longer = [shot for shot in available if shot.duration_us >= target_duration_us]
         if longer:
@@ -122,10 +149,27 @@ class ShotPoolIndex:
             ]
 
         shortlist.sort(key=lambda shot: abs(shot.duration_us - target_duration_us))
-        by_group: dict[str, list[ShotCandidate]] = {}
+        by_collection: dict[str, list[ShotCandidate]] = {}
         for shot in shortlist:
-            by_group.setdefault(shot.group_key, []).append(shot)
+            by_collection.setdefault(shot.effective_collection_key, []).append(shot)
 
-        diverse = [group_shots[0] for group_shots in by_group.values()]
-        pool = diverse or shortlist
-        return rng.choice(pool[: min(len(pool), 8)])
+        collection_diverse = [collection_shots[0] for collection_shots in by_collection.values()]
+        pool = collection_diverse or shortlist
+        pool = pool[: min(len(pool), 12)]
+        if len(pool) == 1:
+            return pool[0]
+
+        weights: list[float] = []
+        for shot in pool:
+            gap = abs(shot.duration_us - target_duration_us)
+            weight = 1.0 / (1.0 + (gap / 250_000))
+            if shot.group_key not in recent_groups:
+                weight *= 1.4
+            if shot.effective_collection_key not in recent_collections:
+                weight *= 1.35
+            if shot.group_key not in used_groups:
+                weight *= 1.2
+            if shot.effective_collection_key not in used_collections:
+                weight *= 1.15
+            weights.append(weight)
+        return rng.choices(pool, weights=weights, k=1)[0]

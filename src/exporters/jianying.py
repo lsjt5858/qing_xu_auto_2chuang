@@ -245,36 +245,94 @@ def _make_material_animation(animation_id: str) -> dict[str, Any]:
     }
 
 
-def _make_text_material(material_id: str, text: str, *, fixed_width: int) -> dict[str, Any]:
-    text = text.strip()
-    content = {
-        "styles": [
-            {
-                "fill": {
+def _hex_to_rgb_triplet(color: str) -> list[float]:
+    color = (color or "").strip().lstrip("#")
+    if len(color) != 6:
+        return [1.0, 1.0, 1.0]
+    try:
+        return [
+            int(color[index:index + 2], 16) / 255.0
+            for index in (0, 2, 4)
+        ]
+    except ValueError:
+        return [1.0, 1.0, 1.0]
+
+
+def _make_text_style_range(
+    *,
+    start: int,
+    end: int,
+    style: SubtitleLayerStyle,
+) -> dict[str, Any]:
+    return {
+        "fill": {
+            "alpha": 1.0,
+            "content": {
+                "render_type": "solid",
+                "solid": {
                     "alpha": 1.0,
-                    "content": {
-                        "render_type": "solid",
-                        "solid": {"alpha": 1.0, "color": [1.0, 1.0, 1.0]},
+                    "color": _hex_to_rgb_triplet(style.text_color),
+                },
+            },
+        },
+        "font": {
+            "id": style.font_resource_id,
+            "path": style.font_path,
+        },
+        "range": [start, end],
+        "size": style.font_size,
+        "bold": style.bold,
+        "italic": style.italic,
+        "underline": style.underline,
+        "strokes": [
+            {
+                "alpha": 1.0,
+                "content": {
+                    "render_type": "solid",
+                    "solid": {
+                        "alpha": 1.0,
+                        "color": _hex_to_rgb_triplet(style.border_color),
                     },
                 },
-                "range": [0, len(text)],
-                "size": 5.0,
-                "bold": False,
-                "italic": False,
-                "underline": False,
-                "strokes": [
-                    {
-                        "alpha": 1.0,
-                        "content": {
-                            "render_type": "solid",
-                            "solid": {"alpha": 1.0, "color": [0.0, 0.0, 0.0]},
-                        },
-                        "width": 0.08,
-                    }
-                ],
+                "width": style.border_width,
             }
         ],
-        "text": text,
+    }
+
+
+def _make_text_material(
+    material_id: str,
+    text: str,
+    *,
+    fixed_width: int,
+    style: SubtitleLayerStyle,
+    secondary_text: str | None = None,
+    secondary_style: SubtitleLayerStyle | None = None,
+    separator: str = "\n",
+) -> dict[str, Any]:
+    text = text.strip()
+    secondary_text = (secondary_text or "").strip()
+    full_text = text
+    styles = [
+        _make_text_style_range(
+            start=0,
+            end=len(text),
+            style=style,
+        )
+    ]
+    if secondary_text and secondary_style is not None:
+        full_text = f"{text}{separator}{secondary_text}"
+        secondary_start = len(text) + len(separator)
+        styles.append(
+            _make_text_style_range(
+                start=secondary_start,
+                end=len(full_text),
+                style=secondary_style,
+            )
+        )
+    content = {
+        "styles": styles,
+        "text": full_text,
     }
     return {
         "id": material_id,
@@ -283,30 +341,30 @@ def _make_text_material(material_id: str, text: str, *, fixed_width: int) -> dic
         "typesetting": 0,
         "alignment": 1,
         "letter_spacing": 0,
-        "line_spacing": 0.02,
+        "line_spacing": style.line_spacing,
         "line_feed": 1,
-        "line_max_width": 0.82,
+        "line_max_width": style.line_max_width,
         "force_apply_line_max_width": False,
         "check_flag": 15,
         "fixed_width": fixed_width,
         "fixed_height": -1,
         "font_category_id": "",
         "font_category_name": "",
-        "font_id": "",
-        "font_name": "",
-        "font_path": "",
-        "font_resource_id": "",
-        "font_size": 5.0,
+        "font_id": style.font_resource_id,
+        "font_name": style.font_name,
+        "font_path": style.font_path,
+        "font_resource_id": style.font_resource_id,
+        "font_size": style.font_size,
         "font_source_platform": 0,
         "font_team_id": "",
-        "font_title": "none",
+        "font_title": style.font_name or "none",
         "font_url": "",
         "fonts": [],
-        "text_color": "#ffffff",
-        "text_size": 30,
-        "border_color": "#000000",
+        "text_color": style.text_color,
+        "text_size": style.text_size,
+        "border_color": style.border_color,
         "border_alpha": 1,
-        "border_width": 0.08,
+        "border_width": style.border_width,
         "background_alpha": 1,
         "background_color": "",
         "background_style": 0,
@@ -333,18 +391,27 @@ def _make_styled_subtitle_material(
                     "alpha": 1.0,
                     "content": {
                         "render_type": "solid",
-                        "solid": {"alpha": 1.0, "color": [1.0, 1.0, 1.0]},
+                        "solid": {
+                            "alpha": 1.0,
+                            "color": _hex_to_rgb_triplet(style.text_color),
+                        },
                     },
                 },
                 "font": {"id": "", "path": ""},
                 "range": [0, len(text)],
                 "size": style.font_size,
+                "bold": style.bold,
+                "italic": style.italic,
+                "underline": style.underline,
                 "strokes": [
                     {
                         "alpha": 1.0,
                         "content": {
                             "render_type": "solid",
-                            "solid": {"alpha": 1.0, "color": [0.0, 0.0, 0.0]},
+                            "solid": {
+                                "alpha": 1.0,
+                                "color": _hex_to_rgb_triplet(style.border_color),
+                            },
                         },
                         "width": style.border_width,
                     }
@@ -367,14 +434,14 @@ def _make_styled_subtitle_material(
         "fixed_height": -1,
         "font_category_id": "",
         "font_category_name": "",
-        "font_id": "",
-        "font_name": "",
-        "font_path": "",
-        "font_resource_id": "",
+        "font_id": style.font_resource_id,
+        "font_name": style.font_name,
+        "font_path": style.font_path,
+        "font_resource_id": style.font_resource_id,
         "font_size": style.font_size,
         "font_source_platform": 0,
         "font_team_id": "",
-        "font_title": "none",
+        "font_title": style.font_name or "none",
         "font_url": "",
         "fonts": [],
         "text_color": style.text_color,
@@ -827,11 +894,38 @@ def _load_or_generate_english_segments(
     )
 
 
+def _collect_secondary_text_for_range(
+    segments: tuple[TranscriptSegment, ...],
+    start_us: int,
+    end_us: int,
+    *,
+    tolerance_us: int = 200_000,
+) -> str:
+    texts: list[str] = []
+    for segment in segments:
+        midpoint = (segment.start_us + segment.end_us) / 2
+        overlaps = (
+            segment.end_us > start_us
+            and segment.start_us < end_us
+        )
+        if not overlaps and not (start_us - tolerance_us <= midpoint <= end_us + tolerance_us):
+            continue
+        text = re.sub(r"\s+", " ", segment.text).strip()
+        if not text or (texts and texts[-1] == text):
+            continue
+        texts.append(text)
+    return " ".join(texts).strip()
+
+
 def _build_subtitle_track(
     *,
     materials: dict[str, list[dict[str, Any]]],
     transcripts: tuple[TranscriptSegment, ...],
     style: SubtitleLayerStyle,
+    secondary_transcripts: tuple[TranscriptSegment, ...] = (),
+    secondary_style: SubtitleLayerStyle | None = None,
+    merge_secondary_into_primary: bool = False,
+    separator: str = "\n",
     timeline_duration_us: int,
     canvas_width: int,
     canvas_height: int,
@@ -851,9 +945,24 @@ def _build_subtitle_track(
         if duration_us <= 0:
             continue
         material_id = _new_id()
+        secondary_text = ""
+        if merge_secondary_into_primary and secondary_style is not None and secondary_transcripts:
+            secondary_text = _collect_secondary_text_for_range(
+                secondary_transcripts,
+                start_us,
+                start_us + duration_us,
+            )
         if style.material_type == "text":
             materials["texts"].append(
-                _make_text_material(material_id, text, fixed_width=fixed_width)
+                _make_text_material(
+                    material_id,
+                    text,
+                    fixed_width=fixed_width,
+                    style=style,
+                    secondary_text=secondary_text,
+                    secondary_style=secondary_style,
+                    separator=separator,
+                )
             )
             subtitle_segments.append(
                 _make_visual_segment(
@@ -1059,6 +1168,10 @@ def export_to_jianying_draft(
         materials=materials,
         transcripts=artifacts.transcript_segments,
         style=style_profile.chinese_layer,
+        secondary_transcripts=english_segments,
+        secondary_style=style_profile.english_layer,
+        merge_secondary_into_primary=style_profile.merge_languages_into_single_track,
+        separator=style_profile.subtitle_separator,
         timeline_duration_us=timeline_duration_us,
         canvas_width=canvas_width,
         canvas_height=canvas_height,
@@ -1066,7 +1179,11 @@ def export_to_jianying_draft(
     if chinese_track:
         tracks.append(chinese_track)
 
-    if english_segments and style_profile.english_layer is not None:
+    if (
+        english_segments
+        and style_profile.english_layer is not None
+        and not style_profile.merge_languages_into_single_track
+    ):
         english_track = _build_subtitle_track(
             materials=materials,
             transcripts=english_segments,

@@ -65,7 +65,9 @@ class HeadTailComposer:
         last_pool_path: Path | None = None
         used_paths: set[Path] = set()
         used_groups: set[str] = set()
+        used_collections: set[str] = set()
         recent_groups: deque[str] = deque(maxlen=max(1, self.settings.recent_group_window))
+        recent_collections: deque[str] = deque(maxlen=max(1, self.settings.recent_group_window))
 
         for slot in self._build_tail_slots(artifacts, head_duration_us, total_duration_us):
             candidate = self.shot_pool.pick(
@@ -74,6 +76,8 @@ class HeadTailComposer:
                 used_paths=used_paths,
                 recent_groups=set(recent_groups),
                 used_groups=used_groups,
+                recent_collections=set(recent_collections),
+                used_collections=used_collections,
                 rng=self.rng,
             )
             source_max_offset = max(0, candidate.duration_us - slot.duration_us)
@@ -96,7 +100,9 @@ class HeadTailComposer:
             last_pool_path = candidate.path
             used_paths.add(candidate.path)
             used_groups.add(candidate.group_key)
+            used_collections.add(candidate.effective_collection_key)
             recent_groups.append(candidate.group_key)
+            recent_collections.append(candidate.effective_collection_key)
 
         return timeline
 

@@ -1,5 +1,5 @@
 """
-Emotion style Jianying exports should use bilingual sticker subtitle tracks.
+Emotion style Jianying exports should merge bilingual subtitles onto one text track.
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from src.models import AnalysisArtifacts, MediaMetadata, TimelineClip, Transcrip
 
 
 class TestJianyingEmotionTemplate(unittest.TestCase):
-    def test_emotion_template_exports_bilingual_sticker_tracks(self):
+    def test_emotion_template_exports_bilingual_text_on_single_track(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             draft_root = tmp_path / "drafts"
@@ -42,9 +42,13 @@ class TestJianyingEmotionTemplate(unittest.TestCase):
                 scenes=(),
                 transcript_segments=(
                     TranscriptSegment(0, 2_000_000, "我们都没有上帝视角"),
+                    TranscriptSegment(2_000_000, 5_000_000, "但你可以继续往前走"),
                 ),
                 english_transcript_segments=(
-                    TranscriptSegment(0, 2_000_000, "We do not have God's perspective."),
+                    TranscriptSegment(0, 800_000, "We do not"),
+                    TranscriptSegment(800_000, 2_000_000, "have God's perspective."),
+                    TranscriptSegment(2_000_000, 3_500_000, "But you can"),
+                    TranscriptSegment(3_500_000, 5_000_000, "keep moving forward."),
                 ),
             )
             timeline = [
@@ -77,22 +81,35 @@ class TestJianyingEmotionTemplate(unittest.TestCase):
 
             draft_info = json.loads((draft_dir / "draft_info.json").read_text(encoding="utf-8"))
             track_types = [track["type"] for track in draft_info["tracks"]]
-            self.assertEqual(track_types, ["video", "audio", "sticker", "sticker"])
+            self.assertEqual(track_types, ["video", "audio", "text"])
 
             subtitle_materials = draft_info["materials"]["texts"]
-            self.assertEqual({item["language"] for item in subtitle_materials}, {"zh-CN", "en-US"})
-            self.assertTrue(all(item["type"] == "subtitle" for item in subtitle_materials))
-            self.assertEqual(len(draft_info["materials"]["material_animations"]), 2)
+            self.assertEqual(len(subtitle_materials), 2)
+            self.assertTrue(all(item["type"] == "text" for item in subtitle_materials))
+            self.assertEqual(draft_info["materials"]["material_animations"], [])
 
             video_segment = draft_info["tracks"][0]["segments"][0]
             audio_segment = draft_info["tracks"][1]["segments"][0]
-            chinese_segment = draft_info["tracks"][2]["segments"][0]
-            english_segment = draft_info["tracks"][3]["segments"][0]
+            subtitle_segment = draft_info["tracks"][2]["segments"][0]
 
-            self.assertGreaterEqual(len(video_segment["extra_material_refs"]), 5)
-            self.assertGreaterEqual(len(audio_segment["extra_material_refs"]), 4)
-            self.assertAlmostEqual(chinese_segment["clip"]["transform"]["y"], -0.73)
-            self.assertAlmostEqual(english_segment["clip"]["transform"]["y"], -0.9)
+            self.assertEqual(len(video_segment["extra_material_refs"]), 1)
+            self.assertEqual(len(audio_segment["extra_material_refs"]), 1)
+            self.assertAlmostEqual(subtitle_segment["clip"]["transform"]["y"], -0.79)
+
+            first_content = json.loads(subtitle_materials[0]["content"])
+            second_content = json.loads(subtitle_materials[1]["content"])
+            self.assertEqual(
+                first_content["text"],
+                "我们都没有上帝视角\nWe do not have God's perspective.",
+            )
+            self.assertEqual(
+                second_content["text"],
+                "但你可以继续往前走\nBut you can keep moving forward.",
+            )
+            self.assertEqual(len(first_content["styles"]), 2)
+            self.assertGreater(first_content["styles"][0]["size"], first_content["styles"][1]["size"])
+            self.assertEqual(subtitle_materials[0]["font_name"], "PingFang SC")
+            self.assertEqual(subtitle_materials[0]["text_color"], "#FFFFFF")
 
 
 if __name__ == "__main__":

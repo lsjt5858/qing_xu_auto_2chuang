@@ -25,6 +25,12 @@ class SubtitleLayerStyle:
     fixed_width_ratio: float = 0.82
     fixed_width: int = -1
     needs_animation: bool = True
+    font_name: str = ""
+    font_path: str = ""
+    font_resource_id: str = ""
+    bold: bool = False
+    italic: bool = False
+    underline: bool = False
 
 
 @dataclass(frozen=True)
@@ -34,6 +40,8 @@ class JianyingStyleTemplate:
     chinese_layer: SubtitleLayerStyle
     english_layer: SubtitleLayerStyle | None = None
     attach_media_support_materials: bool = False
+    merge_languages_into_single_track: bool = False
+    subtitle_separator: str = "\n"
 
 
 BASIC_STYLE_TEMPLATE = JianyingStyleTemplate(
@@ -50,6 +58,8 @@ BASIC_STYLE_TEMPLATE = JianyingStyleTemplate(
         needs_animation=False,
         line_spacing=0.02,
         fixed_width_ratio=0.70,
+        font_name="PingFang SC",
+        bold=True,
     ),
 )
 
@@ -58,22 +68,45 @@ EMOTION_STYLE_TEMPLATE = JianyingStyleTemplate(
     key="emotion",
     label="情绪类视频模版",
     chinese_layer=SubtitleLayerStyle(
-        track_name="中文字幕",
-        track_type="sticker",
+        track_name="双语字幕",
+        track_type="text",
         language="zh-CN",
-        group_id="7734FAAB-474D-4F38-8575-3C6C3C6F3AD4",
-        transform_y=-0.73,
-        render_index_base=14000,
+        group_id="",
+        transform_y=-0.79,
+        render_index_base=15000,
+        material_type="text",
+        needs_animation=False,
+        text_color="#FFFFFF",
+        border_color="#101828",
+        border_width=0.12,
+        font_size=5.6,
+        text_size=32,
+        line_max_width=0.74,
+        line_spacing=0.08,
+        fixed_width_ratio=0.74,
+        font_name="PingFang SC",
+        bold=True,
     ),
     english_layer=SubtitleLayerStyle(
-        track_name="英文字幕",
-        track_type="sticker",
+        track_name="双语字幕",
+        track_type="text",
         language="en-US",
-        group_id="en-US_1775483128",
-        transform_y=-0.90,
-        render_index_base=14020,
+        group_id="",
+        transform_y=-0.79,
+        render_index_base=15000,
+        material_type="text",
+        needs_animation=False,
+        text_color="#D7E6FF",
+        border_color="#101828",
+        border_width=0.08,
+        font_size=3.9,
+        text_size=21,
+        line_max_width=0.74,
+        line_spacing=0.04,
+        fixed_width_ratio=0.74,
+        font_name="Helvetica Neue",
     ),
-    attach_media_support_materials=True,
+    merge_languages_into_single_track=True,
 )
 
 
