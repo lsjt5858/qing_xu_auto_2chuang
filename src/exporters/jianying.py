@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from config.feature_flags import is_feature_enabled
 from src.models import AnalysisArtifacts, TimelineClip, TranscriptSegment, probe_media
 
 from .jianying_styles import JianyingStyleTemplate, SubtitleLayerStyle, resolve_style_template
@@ -821,12 +822,37 @@ def _persist_generated_english_transcript(
     )
 
 
+def _serialize_transcript_segments(
+    segments: tuple[TranscriptSegment, ...],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "start": segment.start_us / 1_000_000,
+            "end": segment.end_us / 1_000_000,
+            "text": segment.text,
+        }
+        for segment in segments
+        if segment.text.strip()
+    ]
+
+
 def _project_venv_python() -> Path | None:
     candidate = Path(__file__).resolve().parents[2] / "venv" / "bin" / "python"
     return candidate if candidate.exists() else None
 
 
-def _generate_english_transcript_with_project_venv(audio_path: Path) -> dict[str, Any] | None:
+def _make_transcriber(model_size: str = "base"):
+    from src.core.transcriber import Transcriber
+
+    return Transcriber(model_size=model_size)
+
+
+def _generate_english_transcript_with_project_venv(
+    audio_path: Path,
+    *,
+    source_segments: tuple[TranscriptSegment, ...] = (),
+    segment_aligned: bool = False,
+) -> dict[str, Any] | None:
     venv_python = _project_venv_python()
     if venv_python is None:
         return None
@@ -838,16 +864,30 @@ import sys
 
 from src.core.transcriber import Transcriber
 
+segments_payload = sys.stdin.read().strip()
+segments = json.loads(segments_payload) if segments_payload else []
+
 with contextlib.redirect_stdout(sys.stderr):
-    result = Transcriber(model_size="base").translate_to_english(sys.argv[1])
+    transcriber = Transcriber(model_size="base")
+    if segments:
+        result = transcriber.translate_segments_to_english(sys.argv[1], segments)
+    else:
+        result = transcriber.translate_to_english(sys.argv[1])
 
 print(json.dumps(result, ensure_ascii=False))
 """.strip()
 
+    payload = ""
+    if segment_aligned and source_segments:
+        payload = json.dumps(
+            _serialize_transcript_segments(source_segments),
+            ensure_ascii=False,
+        )
     result = subprocess.run(
         [str(venv_python), "-c", helper, str(audio_path)],
         check=False,
         capture_output=True,
+        input=payload,
         text=True,
         cwd=str(Path(__file__).resolve().parents[2]),
     )
@@ -871,13 +911,26 @@ def _load_or_generate_english_segments(
     if not artifacts.audio_path or not artifacts.audio_path.exists():
         return ()
 
-    try:
-        from src.core.transcriber import Transcriber
+    segment_aligned = (
+        is_feature_enabled("segment_aligned_bilingual_translation")
+        and bool(artifacts.transcript_segments)
+    )
 
-        translator = Transcriber(model_size="base")
-        english_result = translator.translate_to_english(str(artifacts.audio_path))
+    try:
+        translator = _make_transcriber(model_size="base")
+        if segment_aligned:
+            english_result = translator.translate_segments_to_english(
+                str(artifacts.audio_path),
+                _serialize_transcript_segments(artifacts.transcript_segments),
+            )
+        else:
+            english_result = translator.translate_to_english(str(artifacts.audio_path))
     except Exception as exc:
-        english_result = _generate_english_transcript_with_project_venv(artifacts.audio_path)
+        english_result = _generate_english_transcript_with_project_venv(
+            artifacts.audio_path,
+            source_segments=artifacts.transcript_segments,
+            segment_aligned=segment_aligned,
+        )
         if english_result is None:
             print(f"! 英文字幕生成失败，已回退为单语导出: {exc}")
             return ()
@@ -1164,13 +1217,18 @@ def export_to_jianying_draft(
     if audio_segments:
         tracks.append(_make_track("audio", "音频", audio_segments))
 
+    merge_secondary_into_primary = (
+        style_profile.merge_languages_into_single_track
+        and is_feature_enabled("single_track_bilingual_subtitles")
+    )
+
     chinese_track = _build_subtitle_track(
         materials=materials,
         transcripts=artifacts.transcript_segments,
         style=style_profile.chinese_layer,
         secondary_transcripts=english_segments,
         secondary_style=style_profile.english_layer,
-        merge_secondary_into_primary=style_profile.merge_languages_into_single_track,
+        merge_secondary_into_primary=merge_secondary_into_primary,
         separator=style_profile.subtitle_separator,
         timeline_duration_us=timeline_duration_us,
         canvas_width=canvas_width,
@@ -1182,7 +1240,7 @@ def export_to_jianying_draft(
     if (
         english_segments
         and style_profile.english_layer is not None
-        and not style_profile.merge_languages_into_single_track
+        and not merge_secondary_into_primary
     ):
         english_track = _build_subtitle_track(
             materials=materials,

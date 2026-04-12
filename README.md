@@ -260,6 +260,29 @@ tests/
 - 剪映导出器只负责把时间线和素材写成草稿
 - 包级导入保持惰性，避免轻量脚本被重依赖拖死
 
+## Feature Flag
+
+项目现在提供统一的 feature flag 模块，后续新功能可以通过它做灰度或开关控制：
+
+```python
+from config.feature_flags import feature_flags
+
+feature_flags.register(
+    "my_new_feature",
+    default=False,
+    description="Example feature switch.",
+)
+
+if feature_flags.is_enabled("my_new_feature"):
+    ...
+```
+
+也可以通过环境变量覆盖，例如：
+
+```bash
+export CHAI_FLAG_MY_NEW_FEATURE=true
+```
+
 ## 测试
 
 跑全部测试：

@@ -9,6 +9,7 @@ import random
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from config.feature_flags import is_feature_enabled
 from src.models import AnalysisArtifacts, TimelineClip
 
 from .shot_pool import ShotPoolIndex
@@ -68,41 +69,55 @@ class HeadTailComposer:
         used_collections: set[str] = set()
         recent_groups: deque[str] = deque(maxlen=max(1, self.settings.recent_group_window))
         recent_collections: deque[str] = deque(maxlen=max(1, self.settings.recent_group_window))
+        prevent_frame_extension = is_feature_enabled("prevent_video_frame_extension")
 
         for slot in self._build_tail_slots(artifacts, head_duration_us, total_duration_us):
-            candidate = self.shot_pool.pick(
-                slot.duration_us,
-                exclude_paths={last_pool_path} if last_pool_path else set(),
-                used_paths=used_paths,
-                recent_groups=set(recent_groups),
-                used_groups=used_groups,
-                recent_collections=set(recent_collections),
-                used_collections=used_collections,
-                rng=self.rng,
-            )
-            source_max_offset = max(0, candidate.duration_us - slot.duration_us)
-            source_start_us = (
-                self.rng.randint(0, source_max_offset)
-                if source_max_offset > 0
-                else 0
-            )
-            timeline.append(
-                TimelineClip(
-                    source_path=candidate.path,
-                    timeline_start_us=slot.start_us,
-                    timeline_duration_us=slot.duration_us,
-                    source_start_us=source_start_us,
-                    source_duration_us=slot.duration_us,
-                    role=f"pool:{slot.kind}",
-                    label=slot.text or candidate.path.name,
+            slot_cursor = slot.start_us
+            remaining_us = slot.duration_us
+
+            while remaining_us > 0:
+                candidate = self.shot_pool.pick(
+                    remaining_us,
+                    exclude_paths={last_pool_path} if last_pool_path else set(),
+                    used_paths=used_paths,
+                    recent_groups=set(recent_groups),
+                    used_groups=used_groups,
+                    recent_collections=set(recent_collections),
+                    used_collections=used_collections,
+                    rng=self.rng,
                 )
-            )
-            last_pool_path = candidate.path
-            used_paths.add(candidate.path)
-            used_groups.add(candidate.group_key)
-            used_collections.add(candidate.effective_collection_key)
-            recent_groups.append(candidate.group_key)
-            recent_collections.append(candidate.effective_collection_key)
+                clip_duration_us = (
+                    min(remaining_us, candidate.duration_us)
+                    if prevent_frame_extension
+                    else remaining_us
+                )
+                source_max_offset = max(0, candidate.duration_us - clip_duration_us)
+                source_start_us = (
+                    self.rng.randint(0, source_max_offset)
+                    if source_max_offset > 0
+                    else 0
+                )
+                timeline.append(
+                    TimelineClip(
+                        source_path=candidate.path,
+                        timeline_start_us=slot_cursor,
+                        timeline_duration_us=clip_duration_us,
+                        source_start_us=source_start_us,
+                        source_duration_us=clip_duration_us,
+                        role=f"pool:{slot.kind}",
+                        label=slot.text or candidate.path.name,
+                    )
+                )
+                slot_cursor += clip_duration_us
+                remaining_us -= clip_duration_us
+                last_pool_path = candidate.path
+                used_paths.add(candidate.path)
+                used_groups.add(candidate.group_key)
+                used_collections.add(candidate.effective_collection_key)
+                recent_groups.append(candidate.group_key)
+                recent_collections.append(candidate.effective_collection_key)
+                if not prevent_frame_extension:
+                    break
 
         return timeline
 
