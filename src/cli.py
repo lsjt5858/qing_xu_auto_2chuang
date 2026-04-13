@@ -12,7 +12,7 @@ from .core.video_downloader import VideoDownloader
 def create_parser():
     """创建命令行参数解析器"""
     parser = argparse.ArgumentParser(
-        description="视频分析工具 - 去字幕、分镜分割、音频提取、语音转文字（支持批量处理）",
+        description="视频分析工具 - 去字幕/去底部水印、分镜分割、音频提取、语音转文字（支持批量处理）",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
@@ -65,11 +65,32 @@ urls.txt 格式示例:
                        choices=["tiny", "base", "small", "medium", "large"],
                        help="Whisper 模型大小 (默认: base)")
     parser.add_argument("--remove-subtitles", action="store_true",
-                       help="先移除视频底部烧录字幕，再继续后续处理")
+                       help="先移除视频底部烧录字幕，并清理底部区域的固定半透明水印，再继续后续处理")
     parser.add_argument("--remove-subtitles-only", action="store_true",
-                       help="只导出去字幕后的视频，不执行其他分析步骤")
+                       help="只导出去字幕/去水印后的预处理视频，不执行其他分析步骤")
     parser.add_argument("--subtitle-bar-height", type=int,
                        help="手动指定底部字幕黑边高度（像素）")
+    parser.add_argument("--export-jianying", action="store_true",
+                       help="分析完成后自动导出为剪映草稿")
+    parser.add_argument("--compose-with-pool",
+                       help="使用视频池重组尾部镜头后再导出剪映草稿")
+    parser.add_argument("--head-mode", choices=["first-scene", "fixed-seconds", "none"],
+                       default="first-scene",
+                       help="组合模式下保留原视频头部的规则 (默认: first-scene)")
+    parser.add_argument("--head-duration", type=float,
+                       help="当 --head-mode=fixed-seconds 时，保留头部秒数")
+    parser.add_argument("--compose-seed", type=int,
+                       help="组合模式下随机选镜头的随机种子")
+    parser.add_argument("--draft-root",
+                       help="剪映草稿箱根目录，默认使用本机剪映目录")
+    parser.add_argument("--template-dir",
+                       help="剪映草稿模板目录，默认使用项目内置模板")
+    parser.add_argument("--draft-name",
+                       help="导出的剪映草稿名称")
+    parser.add_argument("--style-template",
+                       choices=["emotion", "basic"],
+                       default="emotion",
+                       help="剪映导出使用的样式模板 (默认: emotion)")
     
     return parser
 
@@ -86,6 +107,9 @@ def main():
 
     if args.remove_subtitles_only:
         args.remove_subtitles = True
+
+    if args.compose_with_pool:
+        args.export_jianying = True
     
     # 收集所有要处理的视频/链接
     video_list = []
@@ -100,8 +124,20 @@ def main():
             return
     
     if args.videos:
-        # 从命令行参数添加视频
-        video_list.extend(args.videos)
+        VIDEO_EXTENSIONS = ('.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm')
+        for item in args.videos:
+            if os.path.isdir(item):
+                dir_videos = sorted(
+                    os.path.join(item, f) for f in os.listdir(item)
+                    if not f.startswith('._') and f.lower().endswith(VIDEO_EXTENSIONS)
+                )
+                if dir_videos:
+                    print(f"从目录 '{item}' 扫描到 {len(dir_videos)} 个视频文件")
+                    video_list.extend(dir_videos)
+                else:
+                    print(f"警告: 目录 '{item}' 中未找到视频文件")
+            else:
+                video_list.append(item)
     
     if not video_list:
         print("错误: 请提供至少一个视频文件/链接或使用 --list 指定列表文件")

@@ -3,3 +3,4 @@ opencv-python>=4.8.0
 openai-whisper>=20231117
 moviepy>=1.0.3
 pydub>=0.25.1
+opencc-python-reimplemented>=0.1.7

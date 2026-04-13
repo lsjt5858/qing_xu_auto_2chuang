@@ -1,251 +1,306 @@
-# 视频分析工具
+# 镜流工坊
 
-一个强大的视频分析工具，支持：
-- ✂️ 自动去字幕：自动检测并去除视频底部烧录字幕
-- 🎬 自动分镜：智能检测场景变化，分割成独立视频
-- 🎵 音频提取：提取视频中的音频轨道
-- 📝 语音转文字：使用 AI 将音频转换为文字文案（支持中文）
-- 📦 批量处理：支持一次处理多个视频
-- 🌐 视频下载：支持从抖音、YouTube、B站等平台下载视频
+原名：`柴视频`。这是一个面向短视频二创的本地处理流水线，用来把原始视频整理成可复用素材，并直接生成剪映草稿。
 
-## 快速开始
+它现在能做的事情很明确：
 
-### 安装
+- 清洗源视频：去底部烧录字幕、去固定半透明水印
+- 拆分镜头：把视频切成 `Scene-001 / Scene-002 / ...`
+- 提取音频与文案：输出 `audio.mp3`、完整文案、带时间戳文案
+- 组合混剪：保留原视频头部，再按字幕节奏从视频池补尾
+- 导出剪映草稿：直接写入剪映草稿箱，可继续在剪映里调整和导出
+
+当前仓库目录仍然是 `chai_shi_pin`，这里只先完成文档层的命名调整，避免影响现有脚本和环境。
+
+## 适合什么场景
+
+这套工具适合这种工作流：
+
+1. 从抖音/快手/小红书保存原视频到本地
+2. 批量清洗并拆分镜头
+3. 收集可复用的“视频头 / 视频身”镜头池
+4. 用某条文案和音频为基准，自动组合一版混剪时间线
+5. 直接进剪映草稿箱继续精修
+
+## 核心流程
+
+```text
+原始视频
+  -> 去字幕 / 去水印
+  -> 分镜拆分
+  -> 提取音频 / 转录文案
+  -> 保留视频头 + 视频池补尾
+  -> 导出剪映草稿
+```
+
+## 安装
 
 ```bash
-# 1. 克隆项目
 git clone https://github.com/lsjt5858/chai_shi_pin.git
 cd chai_shi_pin
 
-# 2. 创建虚拟环境
 python3 -m venv venv
-source venv/bin/activate  # macOS/Linux
+source venv/bin/activate
 
-# 3. 安装依赖
 pip install -r requirements.txt
-
-# 4. 安装 ffmpeg（macOS）
 brew install ffmpeg
 ```
 
-### 基本使用
+## 两个入口
 
-#### 1. 分析本地视频
-```bash
-# 默认流程：先去字幕，再分镜、提取音频、转文字
-./run.sh video.mp4
-```
+你只需要记住两个入口：
 
-#### 1.1 文件名里有空格时
-```bash
-# 请使用英文半角双引号包住整个路径
-./run.sh "/Users/apple1/Desktop/chai_shi_pin/test_videos/“老天爷 请你再给这个小孩一点运气吧”.mp4"
-```
+1. `./run.sh ...`
+   从原始视频开始跑完整流程
+2. `python3 src/utils/jianying_draft_exporter.py ...`
+   从已经生成好的 `output/` 目录直接导出剪映草稿
 
-**注意：** 终端里要用英文双引号 `"..."` 包住路径，不能只依赖文件名里的中文引号 `“...”`，否则会被 shell 按空格拆成多个参数。
-
-#### 2. 从链接下载并分析
-
-**注意：抖音下载需要登录，推荐使用方式 3**
-
-```bash
-# YouTube 视频（无需登录）
-./run.sh https://www.youtube.com/watch?v=xxx -d
-
-# B站视频（无需登录）
-./run.sh https://www.bilibili.com/video/BVxxx -d
-```
-
-#### 3. 批量处理（推荐）
-
-**方式 A：使用抖音官方下载**
-1. 在抖音 App 中：分享 → 保存本地
-2. 将下载的视频放到项目目录
-3. 运行：
-```bash
-./run.sh video1.mp4 video2.mp4
-```
-
-**方式 B：从链接下载（仅支持 YouTube、B站等无需登录的平台）**
-1. 创建 `urls.txt` 文件：
-```txt
-# YouTube 视频
-https://www.youtube.com/watch?v=xxx
-
-# B站视频
-https://www.bilibili.com/video/BVxxx
-
-# 本地文件
-video.mp4
-```
-
-2. 运行：
-```bash
-./run.sh --list urls.txt -d
-```
+`run.sh` 默认会自动带上 `--remove-subtitles`。
 
 ## 常用命令
 
+### 1. 单个视频分析
+
 ```bash
-# 完整分析（默认：先去字幕，再分镜+音频+文案）
-./run.sh video.mp4
-
-# 去字幕 + 分镜
-./run.sh video.mp4 --scenes-only
-
-# 去字幕 + 分镜（绝对路径，文件名含空格）
-./run.sh "/Users/apple1/Desktop/chai_shi_pin/test_videos/“老天爷 请你再给这个小孩一点运气吧”.mp4" --scenes-only
-
-# 只导出去字幕后的视频
-./run.sh video.mp4 --remove-subtitles-only
-
-# 批量处理（使用通配符）
-./run.sh test_videos/*.mp4
-
-# 使用列表文件
-./run.sh --list urls.txt
-
-# 只下载视频
-./run.sh https://www.youtube.com/watch?v=xxx --download-only
-
-# 只提取音频和文案（也会先去字幕）
-./run.sh video.mp4 --audio-only
-
-# 使用更精确的语音识别
-./run.sh video.mp4 --whisper-model medium
-
-# 调整场景检测灵敏度
-./run.sh video.mp4 -t 15  # 更多分镜
-./run.sh video.mp4 -t 35  # 更少分镜
+./run.sh "/path/to/video.mp4"
 ```
 
-## 参数说明
+输出目录类似：
 
-- `videos`: 输入视频文件路径或链接（可以多个）
-- `-l, --list`: 包含视频路径/链接列表的文本文件
-- `-d, --download`: 启用下载功能
-- `--download-only`: 只下载视频，不进行分析
-- `-o, --output`: 输出根目录（默认: output）
-- `-t, --threshold`: 场景检测阈值 0-255（默认: 27）
-- `--remove-subtitles`: 先移除视频底部烧录字幕，再继续后续处理（`run.sh` 默认已启用）
-- `--remove-subtitles-only`: 只导出去字幕后的视频
-- `--subtitle-bar-height`: 手动指定底部字幕黑边高度（像素）
-- `--scenes-only`: 只分割场景（仍会先去字幕）
-- `--audio-only`: 只提取音频和文案（仍会先去字幕）
-- `--whisper-model`: 语音识别模型
-  - `tiny`: 最快，准确度较低
-  - `base`: 平衡（默认）
-  - `small`: 较准确
-  - `medium`: 很准确
-  - `large`: 最准确，但很慢
+```text
+output/视频名_时间戳/
+```
+
+### 2. 批量处理整个目录
+
+```bash
+./run.sh "/path/to/video_dir"
+```
+
+### 3. 批量处理多个文件
+
+```bash
+./run.sh "/path/to/a.mp4" "/path/to/b.mp4" "/path/to/c.mp4"
+```
+
+### 4. 只做部分步骤
+
+```bash
+./run.sh "/path/to/video.mp4" --remove-subtitles-only
+./run.sh "/path/to/video.mp4" --scenes-only
+./run.sh "/path/to/video.mp4" --audio-only
+```
+
+### 5. 分析完直接导入剪映
+
+```bash
+./run.sh "/path/to/video.mp4" --export-jianying
+```
+
+默认会套用 `emotion` 模版，也就是“情绪类视频模版”：
+
+- 以 `output/transcript_detailed.json` 的中文分段为准，统一生成一条字幕轨
+- 双语时会把英文折叠到同一条文本轨里，按“中文在上、英文在下”的样式输出
+- 字号、描边、位置沿用参考草稿 `0406-03` 的情绪类风格
+
+### 6. 用视频池自动组合后导入剪映
+
+```bash
+./run.sh "/path/to/video.mp4" \
+  --compose-with-pool "/path/to/shot_pool"
+```
+
+当前组合逻辑是：
+
+- 总时长以 `audio.mp3` 为准
+- 默认保留原视频第一个分镜作为视频头
+- 后半段按字幕时间段，从视频池选择时长最接近的镜头
+- 选片会优先避开刚用过的素材组和素材集合，提升画面多样性
+- 视频池目录会递归扫描子目录
+- 导出结果是剪映草稿，不是直接渲染好的最终 mp4
+
+### 7. 指定视频头规则
+
+固定保留前 3 秒：
+
+```bash
+./run.sh "/path/to/video.mp4" \
+  --compose-with-pool "/path/to/shot_pool" \
+  --head-mode fixed-seconds \
+  --head-duration 3
+```
+
+不保留原视频头部：
+
+```bash
+./run.sh "/path/to/video.mp4" \
+  --compose-with-pool "/path/to/shot_pool" \
+  --head-mode none
+```
+
+### 8. 已有 output 目录，直接导出剪映
+
+```bash
+python3 src/utils/jianying_draft_exporter.py \
+  "output/某个分析结果目录"
+```
+
+### 9. 已有 output 目录，直接组合并导出剪映
+
+```bash
+python3 src/utils/jianying_draft_exporter.py \
+  "output/某个分析结果目录" \
+  --compose-with-pool "/path/to/shot_pool"
+```
+
+### 10. 收集分镜素材
+
+```bash
+./collect_scenes.sh
+```
+
+这个脚本会把分镜整理出来，方便你做“视频头 / 视频身”镜头池。
+
+## 常用参数
+
+| 参数 | 说明 |
+|------|------|
+| `-o, --output` | 输出根目录，默认 `output` |
+| `-t, --threshold` | 分镜阈值，越小切得越碎 |
+| `--whisper-model` | `tiny / base / small / medium / large` |
+| `--subtitle-bar-height` | 手动指定底部字幕区域高度 |
+| `--export-jianying` | 分析完成后直接导出剪映草稿 |
+| `--compose-with-pool` | 使用视频池自动补尾并导出剪映 |
+| `--head-mode` | `first-scene / fixed-seconds / none` |
+| `--head-duration` | `fixed-seconds` 模式下保留的秒数 |
+| `--style-template` | `emotion / basic`，默认 `emotion` |
+| `--draft-name` | 导出的剪映草稿名 |
+| `--draft-root` | 剪映草稿箱目录，默认使用本机目录 |
 
 ## 输出结构
 
-```
-downloads/                  # 下载的视频（使用 -d 时）
-├── 视频标题1.mp4
-└── 视频标题2.mp4
-
-output/                     # 分析结果
-├── video1_20260406_143022/
-│   ├── video_no_subtitles.mp4  # 去字幕后的最终视频
-│   ├── scenes/            # 分镜视频
-│   │   ├── Scene-001.mp4
-│   │   ├── Scene-002.mp4
-│   │   └── ...
-│   ├── audio.mp3          # 音频
-│   ├── transcript.txt     # 完整文案
-│   ├── transcript_detailed.json  # 带时间戳的文案
-│   └── report.json        # 分析报告
-└── video2_20260406_143045/
-    └── ...
+```text
+output/{视频名}_{时间戳}/
+├── video_no_subtitles.mp4
+├── scenes/
+│   ├── Scene-001.mp4
+│   ├── Scene-002.mp4
+│   └── ...
+├── audio.mp3
+├── transcript.txt
+├── transcript_detailed.json
+├── report.json
+└── composition_plan.json      # 仅在组合模式下生成
 ```
 
-## 支持的平台
+字段职责：
 
-### 完全支持（无需登录）
-- ✅ YouTube
-- ✅ B站（Bilibili）
-- ✅ Vimeo
-- ✅ 以及其他 1000+ 平台
+- `video_no_subtitles.mp4`：清洗后的源视频
+- `scenes/`：拆好的分镜素材
+- `audio.mp3`：音频基准
+- `transcript_detailed.json`：字幕时序基准
+- `report.json`：整个输出目录的总报告
+- `composition_plan.json`：组合模式下的镜头时间线计划
 
-### 不支持在线下载（需要手动下载）
-- ❌ 抖音（Douyin）- 请使用官方下载功能
-- ❌ 快手 - 请使用官方下载功能
-- ❌ 小红书 - 请使用官方下载功能
+## 剪映导出说明
 
-### 推荐方式：手动下载 + 本工具分析
-1. 在 App 中使用官方下载功能（分享 → 保存本地）
-2. 将下载的视频用本工具分析
+导出后的草稿会写入剪映草稿箱目录，并自动登记到草稿索引里。  
+如果剪映正在运行，建议导入后完全退出再重新打开一次。
+
+模板已经内置在当前项目中：
+
+```text
+templates/jianying/
+```
+
+不再依赖外部 `CapCutAPI` 项目。
 
 ## 项目结构
 
-```
-video-analyzer/
-├── main.py                 # 主入口
-├── src/                    # 源代码
-│   ├── core/              # 核心功能（场景检测、音频提取、转录、下载）
-│   ├── utils/             # 工具函数（批量处理、文件操作）
-│   └── cli.py             # 命令行接口
-├── config/                # 配置文件
-├── tests/                 # 测试文件
-└── docs/                  # 文档
+```text
+main.py
+run.sh
+collect_scenes.sh
+templates/
+└── jianying/                  # 剪映草稿模板
+src/
+├── cli.py                     # CLI 入口与参数解析
+├── composition/
+│   ├── shot_pool.py           # 视频池扫描与选片
+│   └── head_tail_composer.py  # 保留视频头 + 补尾组合
+├── core/
+│   ├── video_analyzer.py      # 主流程编排
+│   ├── subtitle_remover.py    # 去字幕 / 去水印
+│   ├── scene_detector.py      # 分镜检测与分割
+│   ├── audio_extractor.py     # 音频提取
+│   ├── transcriber.py         # Whisper 转录
+│   └── video_downloader.py    # 下载入口
+├── exporters/
+│   └── jianying.py            # 剪映草稿导出
+├── models/
+│   └── artifacts.py           # output 目录产物模型
+└── utils/
+    ├── batch_processor.py
+    ├── file_utils.py
+    └── jianying_draft_exporter.py
+tests/
+├── test_analysis_artifacts.py
+├── test_head_tail_composer.py
+├── test_jianying_exporter_defaults.py
+├── test_lazy_package_imports.py
+└── test_root_meta_update.py
 ```
 
-## 作为 Python 包使用
+## 设计约束
+
+这套工程现在的边界是：
+
+- `output/` 目录是统一产物契约
+- 组合逻辑只消费产物，不直接依赖前面流程内部细节
+- 剪映导出器只负责把时间线和素材写成草稿
+- 包级导入保持惰性，避免轻量脚本被重依赖拖死
+
+## Feature Flag
+
+项目现在提供统一的 feature flag 模块，后续新功能可以通过它做灰度或开关控制：
 
 ```python
-from src.core import VideoAnalyzer, VideoDownloader
+from config.feature_flags import feature_flags
 
-# 下载视频
-downloader = VideoDownloader()
-video_path = downloader.download("https://v.douyin.com/xxx/")
+feature_flags.register(
+    "my_new_feature",
+    default=False,
+    description="Example feature switch.",
+)
 
-# 分析视频
-analyzer = VideoAnalyzer(video_path)
-scenes = analyzer.analyze_scenes(threshold=27.0)
-audio = analyzer.extract_audio()
-transcript = analyzer.transcribe_audio(audio, model_size="base")
-report = analyzer.generate_report(scenes, transcript)
+if feature_flags.is_enabled("my_new_feature"):
+    ...
 ```
 
-## 常见问题
+也可以通过环境变量覆盖，例如：
 
-### Q: 第一次运行很慢？
-A: Whisper 模型首次使用时需要下载（约 150MB），之后会缓存到本地
+```bash
+export CHAI_FLAG_MY_NEW_FEATURE=true
+```
 
-### Q: 下载抖音视频失败？
-A: 抖音平台限制，无法直接下载。请使用：
-1. **抖音官方下载**（推荐）：在 App 中点击分享 → 保存本地
-2. **第三方下载工具**：使用专门的抖音下载器
-3. 下载后使用本工具分析：`./run.sh video.mp4`
+## 测试
 
-### Q: 下载功能需要什么？
-A: 工具会自动安装 yt-dlp。如果失败，手动运行：`pip install -U yt-dlp`
+跑全部测试：
 
-### Q: 如何提高语音识别准确度？
-A: 使用更大的模型，如 `--whisper-model medium`
+```bash
+python3 -m unittest discover tests
+```
 
-### Q: 分镜太多或太少？
-A: 调整 `-t` 参数，值越小分镜越多，值越大分镜越少
+## 已知限制
 
-### Q: 文件路径里有空格，为什么命令报“找不到视频文件”？
-A: 请用英文半角双引号包住整个路径，例如：
-`./run.sh "/Users/apple1/Desktop/chai_shi_pin/test_videos/“老天爷 请你再给这个小孩一点运气吧”.mp4" --scenes-only`
+- 当前输出的是剪映草稿，不是直接渲染成最终视频文件
+- 视频池目前按时长优先匹配，还没有做更复杂的画幅/内容语义筛选
+- 如果路径里有空格，请用双引号包住完整路径
 
-### Q: 可以直接粘贴抖音分享文本吗？
-A: 工具会尝试提取链接，但抖音无法直接下载。建议使用官方下载功能后再分析
+## 后续建议
 
-## 文档
+接下来最值得继续做的事：
 
-- [架构文档](docs/ARCHITECTURE.md) - 项目架构和扩展指南
-- [API 文档](docs/API.md) - 编程接口文档
-- [贡献指南](docs/CONTRIBUTING.md) - 如何贡献代码
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-## 许可证
-
-MIT License
+1. 视频池增加画幅过滤、重复素材抑制、最小时长过滤
+2. 剪映字幕样式做成可配置
+3. 增加“直接渲染成 mp4”的离线导出链路

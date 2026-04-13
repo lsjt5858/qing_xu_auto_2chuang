@@ -5,6 +5,10 @@ import os
 import time
 from pathlib import Path
 
+from src.composition import CompositionSettings, HeadTailComposer, ShotPoolIndex
+from src.exporters import export_to_jianying_draft
+from src.models import load_analysis_artifacts
+
 from ..core.video_analyzer import VideoAnalyzer
 
 
@@ -21,6 +25,46 @@ class BatchProcessor:
         self.output_dir = output_dir
         self.success_count = 0
         self.failed_videos = []
+
+    def _maybe_export_jianying(self, analyzer, video_path, args):
+        should_export = getattr(args, "export_jianying", False) or getattr(args, "compose_with_pool", None)
+        if not should_export:
+            return None
+
+        artifacts = load_analysis_artifacts(analyzer.output_dir)
+        timeline = None
+
+        if getattr(args, "compose_with_pool", None):
+            shot_pool = ShotPoolIndex.from_directory(args.compose_with_pool)
+            settings = CompositionSettings(
+                head_mode=getattr(args, "head_mode", "first-scene"),
+                head_duration_us=(
+                    int(round(getattr(args, "head_duration", 0) * 1_000_000))
+                    if getattr(args, "head_duration", None) is not None
+                    else None
+                ),
+                random_seed=getattr(args, "compose_seed", None),
+            )
+            composer = HeadTailComposer(shot_pool, settings)
+            timeline = composer.compose(artifacts)
+            composer.save_plan(
+                Path(analyzer.output_dir) / "composition_plan.json",
+                timeline,
+            )
+
+        export_kwargs = {"timeline_clips": timeline}
+        if getattr(args, "draft_root", None):
+            export_kwargs["draft_root"] = args.draft_root
+        if getattr(args, "template_dir", None):
+            export_kwargs["template_dir"] = args.template_dir
+        if getattr(args, "draft_name", None):
+            export_kwargs["draft_name"] = args.draft_name
+        if getattr(args, "style_template", None):
+            export_kwargs["style_template"] = args.style_template
+
+        draft_dir = export_to_jianying_draft(artifacts, **export_kwargs)
+        print(f"✓ 剪映草稿已导出到: {draft_dir}")
+        return draft_dir
     
     def process_video(self, video_path, args):
         """
@@ -72,6 +116,7 @@ class BatchProcessor:
             # 生成报告
             if scenes_info or transcript_result:
                 analyzer.generate_report(scenes_info, transcript_result)
+                self._maybe_export_jianying(analyzer, video_path, args)
             
             print(f"\n{'='*60}")
             print(f"✓ 视频 '{Path(video_path).name}' 分析完成！")
