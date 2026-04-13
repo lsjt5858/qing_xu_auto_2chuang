@@ -3,8 +3,8 @@
 #   Scene-001 → 视频头
 #   其余 Scene → 视频身
 
-HEAD_DIR="/Volumes/xiong_home/哼哼猫下载/情绪/视频头"
-BODY_DIR="/Volumes/xiong_home/哼哼猫下载/情绪/视频身"
+# HEAD_DIR="/Volumes/xiong_home/哼哼猫下载/情绪/视频头"
+BODY_DIR="/Users/bytedance/Downloads/douyin_videos/视频身"
 OUTPUT_DIR="$(cd "$(dirname "$0")" && pwd)/output"
 
 mkdir -p "$HEAD_DIR" "$BODY_DIR"

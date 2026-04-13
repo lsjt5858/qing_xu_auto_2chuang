@@ -13,7 +13,7 @@ if __package__ in (None, ""):
 
 from src.composition import CompositionSettings, HeadTailComposer, ShotPoolIndex
 from src.exporters import export_to_jianying_draft
-from src.exporters.jianying import DEFAULT_DRAFT_ROOT, DEFAULT_TEMPLATE_DIR
+from src.exporters.jianying import resolve_draft_root, DEFAULT_TEMPLATE_DIR
 from src.models import load_analysis_artifacts
 
 
@@ -103,7 +103,7 @@ def main() -> None:
     draft_dir = export_to_jianying_draft(
         artifacts,
         timeline_clips=timeline,
-        draft_root=draft_root or DEFAULT_DRAFT_ROOT,
+        draft_root=resolve_draft_root(draft_root),
         template_dir=template_dir or DEFAULT_TEMPLATE_DIR,
         draft_name=args.draft_name,
         style_template=args.style_template,
