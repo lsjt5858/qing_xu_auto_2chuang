@@ -3,7 +3,7 @@
 ## 项目结构
 
 ```
-video-analyzer/
+qing_xu_auto_2chuang/
 ├── main.py                      # 主入口文件
 ├── run.sh                       # 便捷运行脚本
 ├── requirements.txt             # 依赖列表

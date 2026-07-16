@@ -6,8 +6,8 @@
 
 1. Fork 并克隆仓库
 ```bash
-git clone https://github.com/your-username/video-analyzer.git
-cd video-analyzer
+git clone https://github.com/your-username/qing_xu_auto_2chuang.git
+cd qing_xu_auto_2chuang
 ```
 
 2. 创建虚拟环境

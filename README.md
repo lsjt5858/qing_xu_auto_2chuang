@@ -1,6 +1,6 @@
-# 镜流工坊
+# qing_xu_auto_2chuang
 
-原名：`柴视频`。这是一个面向短视频二创的本地处理流水线，用来把原始视频整理成可复用素材，并直接生成剪映草稿。
+这是一个面向短视频二创的本地处理流水线，用来把原始视频整理成可复用素材，并直接生成剪映草稿。
 
 它现在能做的事情很明确：
 
@@ -10,7 +10,7 @@
 - 组合混剪：保留原视频头部，再按字幕节奏从视频池补尾
 - 导出剪映草稿：直接写入剪映草稿箱，可继续在剪映里调整和导出
 
-当前仓库目录仍然是 `chai_shi_pin`，这里只先完成文档层的命名调整，避免影响现有脚本和环境。
+当前项目名统一为 `qing_xu_auto_2chuang`。
 
 ## 适合什么场景
 
@@ -36,8 +36,8 @@
 ## 安装
 
 ```bash
-git clone https://github.com/lsjt5858/chai_shi_pin.git
-cd chai_shi_pin
+git clone https://github.com/lsjt5858/qing_xu_auto_2chuang.git
+cd qing_xu_auto_2chuang
 
 python3 -m venv venv
 source venv/bin/activate
