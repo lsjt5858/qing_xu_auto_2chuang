@@ -2,7 +2,7 @@
 场景检测模块 - 负责视频分镜检测和分割
 """
 import os
-from scenedetect import VideoManager, SceneManager
+from scenedetect import open_video, SceneManager
 from scenedetect.detectors import ContentDetector
 from scenedetect.video_splitter import split_video_ffmpeg
 
@@ -29,14 +29,14 @@ class SceneDetector:
         Returns:
             list: 场景列表，每个场景包含开始和结束时间
         """
-        video_manager = VideoManager([video_path])
+        # 使用新的 API (scenedetect 0.7+)
+        video = open_video(video_path)
         scene_manager = SceneManager()
         scene_manager.add_detector(ContentDetector(threshold=self.threshold))
         
-        video_manager.start()
-        scene_manager.detect_scenes(frame_source=video_manager)
+        # 检测场景
+        scene_manager.detect_scenes(video)
         scene_list = scene_manager.get_scene_list()
-        video_manager.release()
         
         # 转换为更友好的格式
         scenes_info = []

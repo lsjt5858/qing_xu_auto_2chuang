@@ -1,0 +1,4 @@
+interface:
+  display_name: "催泪情感短剧编剧"
+  short_description: "将故事写成克制催泪、适合传播并可交给万物生制作的完整短剧"
+  default_prompt: "使用 $write-emotional-microdrama 将这段故事改写成适合短视频传播、并可交给万物生导演继续制作的完整情感短剧。"
