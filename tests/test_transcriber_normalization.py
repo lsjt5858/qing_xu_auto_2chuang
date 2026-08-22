@@ -3,10 +3,14 @@ Transcriber should normalize Chinese output to simplified Chinese.
 """
 from __future__ import annotations
 
+import importlib
+from pathlib import Path
 import unittest
 from unittest.mock import Mock, patch
 
 from src.core.transcriber import SIMPLIFIED_CHINESE_PROMPT, Transcriber
+
+transcriber_module = importlib.import_module("src.core.transcriber")
 
 
 class TestTranscriberNormalization(unittest.TestCase):
@@ -93,6 +97,59 @@ class TestTranscriberNormalization(unittest.TestCase):
         self.assertEqual(retry_kwargs["task"], "translate")
         self.assertEqual(retry_kwargs["temperature"], 0)
         self.assertNotIn("language", retry_kwargs)
+
+    @patch("src.core.transcriber.importlib.import_module")
+    def test_translate_segments_to_english_preserves_segment_timestamps(
+        self,
+        mock_import_module,
+    ):
+        class FakeClip:
+            def export(self, path, format):
+                Path(path).write_bytes(b"fake")
+
+        class FakeAudio:
+            def __len__(self):
+                return 10_000
+
+            def __getitem__(self, key):
+                return FakeClip()
+
+        fake_model = Mock()
+        fake_model.transcribe.side_effect = [
+            {"text": "We do not have God's perspective."},
+            {"text": "But you can keep moving forward."},
+        ]
+        fake_whisper = Mock()
+        fake_whisper.load_model.return_value = fake_model
+        mock_import_module.return_value = fake_whisper
+        mock_audio_segment_class = Mock()
+        mock_audio_segment_class.from_file.return_value = FakeAudio()
+
+        with patch.object(
+            transcriber_module,
+            "_load_audio_segment",
+            return_value=mock_audio_segment_class,
+        ):
+            transcriber = Transcriber(model_size="base")
+            result = transcriber.translate_segments_to_english(
+                "/tmp/fake.mp3",
+                [
+                    {"start": 0.0, "end": 2.0, "text": "我们都没有上帝视角"},
+                    {"start": 2.0, "end": 5.0, "text": "但你可以继续往前走"},
+                ],
+            )
+
+        self.assertEqual(
+            result["segments"],
+            [
+                {"start": 0.0, "end": 2.0, "text": "We do not have God's perspective."},
+                {"start": 2.0, "end": 5.0, "text": "But you can keep moving forward."},
+            ],
+        )
+        _, kwargs = fake_model.transcribe.call_args
+        self.assertEqual(kwargs["task"], "translate")
+        self.assertEqual(kwargs["language"], "zh")
+        self.assertEqual(kwargs["temperature"], 0)
 
 
 if __name__ == "__main__":

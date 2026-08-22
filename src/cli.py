@@ -7,6 +7,7 @@ import os
 from .utils.file_utils import read_video_list
 from .utils.batch_processor import BatchProcessor
 from .core.video_downloader import VideoDownloader
+from .exporters.jianying import resolve_draft_root
 
 
 def create_parser():
@@ -110,6 +111,11 @@ def main():
 
     if args.compose_with_pool:
         args.export_jianying = True
+
+    if getattr(args, "export_jianying", False) or getattr(args, "compose_with_pool", None):
+        draft_root = resolve_draft_root(getattr(args, "draft_root", None))
+        args.draft_root = str(draft_root)
+        print(f"✓ 剪映草稿箱路径已确认: {draft_root}")
     
     # 收集所有要处理的视频/链接
     video_list = []
@@ -126,6 +132,7 @@ def main():
     if args.videos:
         VIDEO_EXTENSIONS = ('.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm')
         for item in args.videos:
+            item = item.strip()
             if os.path.isdir(item):
                 dir_videos = sorted(
                     os.path.join(item, f) for f in os.listdir(item)

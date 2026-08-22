@@ -7,6 +7,7 @@ import random
 import unittest
 from pathlib import Path
 
+from config.feature_flags import feature_flags
 from src.composition.shot_pool import ShotCandidate, ShotPoolIndex
 
 
@@ -72,3 +73,37 @@ class TestShotPoolSelection(unittest.TestCase):
         )
 
         self.assertEqual(shot.effective_collection_key, "collection-b")
+
+    def test_pick_can_ignore_collection_diversity_when_flag_disabled(self):
+        pool = ShotPoolIndex(
+            [
+                ShotCandidate(
+                    Path("/tmp/set_a/a_scene1.mp4"),
+                    2_100_000,
+                    1920,
+                    1080,
+                    "group-a",
+                    1,
+                    "collection-a",
+                ),
+                ShotCandidate(
+                    Path("/tmp/set_b/c_scene1.mp4"),
+                    2_700_000,
+                    1920,
+                    1080,
+                    "group-c",
+                    1,
+                    "collection-b",
+                ),
+            ]
+        )
+
+        with feature_flags.override(shot_pool_collection_diversity=False):
+            shot = pool.pick(
+                2_000_000,
+                recent_collections={"collection-a"},
+                used_collections={"collection-a"},
+                rng=random.Random(1),
+            )
+
+        self.assertEqual(shot.effective_collection_key, "collection-a")

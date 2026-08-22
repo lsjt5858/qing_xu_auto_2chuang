@@ -2,6 +2,9 @@
 语音转文字模块 - 负责音频转录
 """
 import importlib
+import os
+import re
+import tempfile
 
 from src.utils.audio_silence import load_audio_silence_profile
 from src.utils.subtitle_segmentation import split_transcript_segments
@@ -9,6 +12,16 @@ from src.utils.text_normalizer import normalize_chinese_text
 
 
 SIMPLIFIED_CHINESE_PROMPT = "以下是普通话简体中文字幕。请使用简体中文输出，不要使用繁体字。"
+
+
+def _load_audio_segment():
+    try:
+        from pydub import AudioSegment
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "需要安装 pydub 才能启用按字幕分段的双语翻译功能。"
+        ) from exc
+    return AudioSegment
 
 
 class Transcriber:
@@ -117,3 +130,64 @@ class Transcriber:
             normalize_chinese=False,
             task="translate",
         )
+
+    def translate_segments_to_english(
+        self,
+        audio_path,
+        segments,
+        source_language="zh",
+        *,
+        pad_seconds=0.15,
+    ):
+        """按给定的字幕时间切分音频并逐段翻译，保留原始时间轴。"""
+        self.load_model()
+        audio = _load_audio_segment().from_file(audio_path)
+        translated_segments = []
+
+        for segment in segments:
+            start = float(segment.get("start", 0.0))
+            end = float(segment.get("end", start))
+            if end <= start:
+                continue
+
+            clip_start_ms = max(0, int(round((start - pad_seconds) * 1000)))
+            clip_end_ms = min(len(audio), int(round((end + pad_seconds) * 1000)))
+            if clip_end_ms <= clip_start_ms:
+                clip_start_ms = max(0, int(round(start * 1000)))
+                clip_end_ms = min(len(audio), int(round(end * 1000)))
+            if clip_end_ms <= clip_start_ms:
+                continue
+
+            temp_path = None
+            try:
+                clip = audio[clip_start_ms:clip_end_ms]
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                    temp_path = tmp.name
+                clip.export(temp_path, format="wav")
+                result = self.model.transcribe(
+                    temp_path,
+                    language=source_language,
+                    task="translate",
+                    temperature=0,
+                )
+                text = re.sub(r"\s+", " ", str(result.get("text", ""))).strip()
+            finally:
+                if temp_path and os.path.exists(temp_path):
+                    os.unlink(temp_path)
+
+            translated_segments.append(
+                {
+                    "start": start,
+                    "end": end,
+                    "text": text,
+                }
+            )
+
+        return {
+            "text": " ".join(
+                item["text"]
+                for item in translated_segments
+                if item["text"].strip()
+            ).strip(),
+            "segments": translated_segments,
+        }

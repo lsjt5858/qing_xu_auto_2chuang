@@ -48,6 +48,9 @@ test_videos/
 .DS_Store
 Thumbs.db
 
+# 本地剪映配置（包含用户个人路径）
+.jianying_config.json
+
 # Logs
 *.log
 

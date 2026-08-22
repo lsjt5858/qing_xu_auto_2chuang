@@ -12,15 +12,104 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from config.feature_flags import is_feature_enabled
 from src.models import AnalysisArtifacts, TimelineClip, TranscriptSegment, probe_media
 
 from .jianying_styles import JianyingStyleTemplate, SubtitleLayerStyle, resolve_style_template
 
 
-DEFAULT_DRAFT_ROOT = Path(
-    "/Users/apple1/Movies/JianyingPro/User Data/Projects/com.lveditor.draft"
-)
+_CONFIG_FILE = Path(__file__).resolve().parents[2] / ".jianying_config.json"
+
+_CANDIDATE_DRAFT_ROOTS = [
+    Path.home() / "Movies/JianyingPro/User Data/Projects/com.lveditor.draft",
+    Path.home() / "Movies/JianyingPro Drafts",
+    Path.home() / "Library/Containers/com.lemonInc.jianying/Data/Movies/JianyingPro/User Data/Projects/com.lveditor.draft",
+    Path("/Applications/JianyingPro.app/../User Data/Projects/com.lveditor.draft"),
+]
+
 DEFAULT_TEMPLATE_DIR = Path(__file__).resolve().parents[2] / "templates" / "jianying"
+
+
+def _load_cached_draft_root() -> Path | None:
+    if _CONFIG_FILE.exists():
+        try:
+            data = json.loads(_CONFIG_FILE.read_text(encoding="utf-8"))
+            cached = data.get("draft_root")
+            if cached:
+                cached_path = Path(cached)
+                if cached_path.is_dir():
+                    return cached_path
+                print(f"⚠ 上次保存的剪映草稿箱路径已失效: {cached}")
+                print(f"  将重新检索...\n")
+        except (json.JSONDecodeError, OSError):
+            pass
+    return None
+
+
+def _save_draft_root(path: Path) -> None:
+    data = {}
+    if _CONFIG_FILE.exists():
+        try:
+            data = json.loads(_CONFIG_FILE.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    data["draft_root"] = str(path)
+    _CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _auto_detect_draft_root() -> Path | None:
+    for candidate in _CANDIDATE_DRAFT_ROOTS:
+        resolved = candidate.expanduser().resolve()
+        if resolved.is_dir():
+            return resolved
+    return None
+
+
+def _ask_user_for_draft_root() -> Path:
+    print("\n" + "=" * 60)
+    print("⚠ 未找到剪映草稿箱目录")
+    print("=" * 60)
+    print("请输入你的剪映草稿箱路径（包含各草稿文件夹的目录）。")
+    print("常见路径示例:")
+    print("  ~/Movies/JianyingPro/User Data/Projects/com.lveditor.draft")
+    print("  提示: 在剪映「设置 → 草稿」中可以查看该路径")
+    print("=" * 60)
+
+    while True:
+        raw = input("\n请输入剪映草稿箱路径: ").strip()
+        if not raw:
+            continue
+        path = Path(raw).expanduser().resolve()
+        if path.is_dir():
+            return path
+        print(f"✗ 路径不存在或不是目录: {path}")
+        print("  请检查后重新输入")
+
+
+def resolve_draft_root(user_supplied: str | Path | None = None) -> Path:
+    if user_supplied:
+        p = Path(user_supplied).expanduser().resolve()
+        if p.is_dir():
+            return p
+        print(f"⚠ 指定的剪映草稿箱路径无效: {p}")
+        print(f"  将尝试自动检索正确路径...\n")
+
+    cached = _load_cached_draft_root()
+    if cached:
+        return cached
+
+    print("🔍 正在自动检索本机剪映草稿箱位置...")
+    detected = _auto_detect_draft_root()
+    if detected:
+        print(f"✓ 自动检测到剪映草稿箱: {detected}")
+        _save_draft_root(detected)
+        return detected
+
+    print("✗ 自动检索未找到剪映草稿箱")
+    user_path = _ask_user_for_draft_root()
+    _save_draft_root(user_path)
+    print(f"✓ 已保存草稿箱路径到配置文件，下次将自动使用")
+    return user_path
 
 
 def _new_id() -> str:
@@ -821,12 +910,37 @@ def _persist_generated_english_transcript(
     )
 
 
+def _serialize_transcript_segments(
+    segments: tuple[TranscriptSegment, ...],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "start": segment.start_us / 1_000_000,
+            "end": segment.end_us / 1_000_000,
+            "text": segment.text,
+        }
+        for segment in segments
+        if segment.text.strip()
+    ]
+
+
 def _project_venv_python() -> Path | None:
     candidate = Path(__file__).resolve().parents[2] / "venv" / "bin" / "python"
     return candidate if candidate.exists() else None
 
 
-def _generate_english_transcript_with_project_venv(audio_path: Path) -> dict[str, Any] | None:
+def _make_transcriber(model_size: str = "base"):
+    from src.core.transcriber import Transcriber
+
+    return Transcriber(model_size=model_size)
+
+
+def _generate_english_transcript_with_project_venv(
+    audio_path: Path,
+    *,
+    source_segments: tuple[TranscriptSegment, ...] = (),
+    segment_aligned: bool = False,
+) -> dict[str, Any] | None:
     venv_python = _project_venv_python()
     if venv_python is None:
         return None
@@ -838,16 +952,30 @@ import sys
 
 from src.core.transcriber import Transcriber
 
+segments_payload = sys.stdin.read().strip()
+segments = json.loads(segments_payload) if segments_payload else []
+
 with contextlib.redirect_stdout(sys.stderr):
-    result = Transcriber(model_size="base").translate_to_english(sys.argv[1])
+    transcriber = Transcriber(model_size="base")
+    if segments:
+        result = transcriber.translate_segments_to_english(sys.argv[1], segments)
+    else:
+        result = transcriber.translate_to_english(sys.argv[1])
 
 print(json.dumps(result, ensure_ascii=False))
 """.strip()
 
+    payload = ""
+    if segment_aligned and source_segments:
+        payload = json.dumps(
+            _serialize_transcript_segments(source_segments),
+            ensure_ascii=False,
+        )
     result = subprocess.run(
         [str(venv_python), "-c", helper, str(audio_path)],
         check=False,
         capture_output=True,
+        input=payload,
         text=True,
         cwd=str(Path(__file__).resolve().parents[2]),
     )
@@ -871,13 +999,26 @@ def _load_or_generate_english_segments(
     if not artifacts.audio_path or not artifacts.audio_path.exists():
         return ()
 
-    try:
-        from src.core.transcriber import Transcriber
+    segment_aligned = (
+        is_feature_enabled("segment_aligned_bilingual_translation")
+        and bool(artifacts.transcript_segments)
+    )
 
-        translator = Transcriber(model_size="base")
-        english_result = translator.translate_to_english(str(artifacts.audio_path))
+    try:
+        translator = _make_transcriber(model_size="base")
+        if segment_aligned:
+            english_result = translator.translate_segments_to_english(
+                str(artifacts.audio_path),
+                _serialize_transcript_segments(artifacts.transcript_segments),
+            )
+        else:
+            english_result = translator.translate_to_english(str(artifacts.audio_path))
     except Exception as exc:
-        english_result = _generate_english_transcript_with_project_venv(artifacts.audio_path)
+        english_result = _generate_english_transcript_with_project_venv(
+            artifacts.audio_path,
+            source_segments=artifacts.transcript_segments,
+            segment_aligned=segment_aligned,
+        )
         if english_result is None:
             print(f"! 英文字幕生成失败，已回退为单语导出: {exc}")
             return ()
@@ -1012,7 +1153,7 @@ def export_to_jianying_draft(
     artifacts: AnalysisArtifacts,
     *,
     timeline_clips: list[TimelineClip] | None = None,
-    draft_root: str | Path = DEFAULT_DRAFT_ROOT,
+    draft_root: str | Path | None = None,
     template_dir: str | Path = DEFAULT_TEMPLATE_DIR,
     draft_name: str | None = None,
     style_template: str | None = None,
@@ -1022,7 +1163,7 @@ def export_to_jianying_draft(
         raise ValueError("No timeline clips available for export")
 
     style_profile = resolve_style_template(style_template)
-    draft_root = Path(draft_root).expanduser()
+    draft_root = resolve_draft_root(draft_root)
     template_dir = Path(template_dir).expanduser()
     requested_name = draft_name or f"chai_{artifacts.video_name}_{datetime.now():%H%M%S}"
     final_name, draft_dir = _unique_draft_dir(draft_root, requested_name)
@@ -1164,13 +1305,18 @@ def export_to_jianying_draft(
     if audio_segments:
         tracks.append(_make_track("audio", "音频", audio_segments))
 
+    merge_secondary_into_primary = (
+        style_profile.merge_languages_into_single_track
+        and is_feature_enabled("single_track_bilingual_subtitles")
+    )
+
     chinese_track = _build_subtitle_track(
         materials=materials,
         transcripts=artifacts.transcript_segments,
         style=style_profile.chinese_layer,
         secondary_transcripts=english_segments,
         secondary_style=style_profile.english_layer,
-        merge_secondary_into_primary=style_profile.merge_languages_into_single_track,
+        merge_secondary_into_primary=merge_secondary_into_primary,
         separator=style_profile.subtitle_separator,
         timeline_duration_us=timeline_duration_us,
         canvas_width=canvas_width,
@@ -1182,7 +1328,7 @@ def export_to_jianying_draft(
     if (
         english_segments
         and style_profile.english_layer is not None
-        and not style_profile.merge_languages_into_single_track
+        and not merge_secondary_into_primary
     ):
         english_track = _build_subtitle_track(
             materials=materials,

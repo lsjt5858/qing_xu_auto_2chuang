@@ -8,6 +8,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from config.feature_flags import is_feature_enabled
 from src.models import probe_media
 
 
@@ -98,6 +99,7 @@ class ShotPoolIndex:
         recent_collections = set(recent_collections or set())
         used_collections = set(used_collections or set())
         rng = rng or random.Random()
+        collection_diversity_enabled = is_feature_enabled("shot_pool_collection_diversity")
 
         available = [shot for shot in self.shots if shot.path not in exclude_paths]
         if not available:
@@ -107,30 +109,39 @@ class ShotPoolIndex:
         if unused:
             available = unused
 
-        preference_tiers = (
-            [
-                shot
-                for shot in available
-                if shot.group_key not in recent_groups
-                and shot.effective_collection_key not in recent_collections
-                and shot.group_key not in used_groups
-                and shot.effective_collection_key not in used_collections
-            ],
-            [
-                shot
-                for shot in available
-                if shot.group_key not in recent_groups
-                and shot.effective_collection_key not in recent_collections
-            ],
-            [shot for shot in available if shot.group_key not in recent_groups],
-            [shot for shot in available if shot.effective_collection_key not in recent_collections],
-            [shot for shot in available if shot.group_key not in used_groups],
-            [shot for shot in available if shot.effective_collection_key not in used_collections],
-        )
-        for tier in preference_tiers:
-            if tier:
-                available = tier
-                break
+        if collection_diversity_enabled:
+            preference_tiers = (
+                [
+                    shot
+                    for shot in available
+                    if shot.group_key not in recent_groups
+                    and shot.effective_collection_key not in recent_collections
+                    and shot.group_key not in used_groups
+                    and shot.effective_collection_key not in used_collections
+                ],
+                [
+                    shot
+                    for shot in available
+                    if shot.group_key not in recent_groups
+                    and shot.effective_collection_key not in recent_collections
+                ],
+                [shot for shot in available if shot.group_key not in recent_groups],
+                [shot for shot in available if shot.effective_collection_key not in recent_collections],
+                [shot for shot in available if shot.group_key not in used_groups],
+                [shot for shot in available if shot.effective_collection_key not in used_collections],
+            )
+            for tier in preference_tiers:
+                if tier:
+                    available = tier
+                    break
+        else:
+            non_recent = [shot for shot in available if shot.group_key not in recent_groups]
+            if non_recent:
+                available = non_recent
+
+            fresh_groups = [shot for shot in available if shot.group_key not in used_groups]
+            if fresh_groups:
+                available = fresh_groups
 
         longer = [shot for shot in available if shot.duration_us >= target_duration_us]
         if longer:
@@ -149,6 +160,15 @@ class ShotPoolIndex:
             ]
 
         shortlist.sort(key=lambda shot: abs(shot.duration_us - target_duration_us))
+        if not collection_diversity_enabled:
+            by_group: dict[str, list[ShotCandidate]] = {}
+            for shot in shortlist:
+                by_group.setdefault(shot.group_key, []).append(shot)
+
+            diverse = [group_shots[0] for group_shots in by_group.values()]
+            pool = diverse or shortlist
+            return rng.choice(pool[: min(len(pool), 8)])
+
         by_collection: dict[str, list[ShotCandidate]] = {}
         for shot in shortlist:
             by_collection.setdefault(shot.effective_collection_key, []).append(shot)
