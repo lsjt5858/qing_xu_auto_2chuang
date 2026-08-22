@@ -56,24 +56,42 @@ class SceneDetector:
 
     def detect_scenes(self, video_path):
         """
-        检测视频中的场景（当前版本暂用 ContentDetector，
-        Task 5 将替换为 AdaptiveDetector）
+        检测视频中的真实画面切换点
 
         Args:
             video_path: 视频文件路径
 
         Returns:
-            tuple: (scenes_info, scene_list)
+            tuple: (scenes_info, scene_list) 场景信息列表和 PySceneDetect 场景列表
         """
         from scenedetect import open_video, SceneManager
-        from scenedetect.detectors import ContentDetector
+        from scenedetect.detectors import AdaptiveDetector
 
         video = open_video(str(video_path))
         scene_manager = SceneManager()
-        scene_manager.add_detector(ContentDetector(threshold=self.content_threshold))
+
+        fps = video.frame_rate or 30.0
+        min_scene_len_frames = max(1, int(round(self.min_scene_length * fps)))
+
+        scene_manager.add_detector(
+            AdaptiveDetector(
+                adaptive_threshold=self.adaptive_threshold,
+                min_content_val=self.content_threshold,
+                min_scene_len=min_scene_len_frames,
+            )
+        )
 
         scene_manager.detect_scenes(video)
         scene_list = scene_manager.get_scene_list()
+
+        if not scene_list:
+            from scenedetect.frame_timecode import FrameTimecode
+
+            end_timecode = FrameTimecode(
+                timecode=video.duration.get_seconds(),
+                fps=video.frame_rate,
+            )
+            scene_list = [(video.base_timecode, end_timecode)]
 
         scenes_info = []
         for i, scene in enumerate(scene_list, start=1):
