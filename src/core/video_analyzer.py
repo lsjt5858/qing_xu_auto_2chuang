@@ -34,6 +34,8 @@ class VideoAnalyzer:
         self.output_dir = os.path.join(base_output_dir, f"{self.video_name}_{timestamp}")
         os.makedirs(self.output_dir, exist_ok=True)
         
+        self.scene_detection_config = None
+        
         print(f"\n{'='*60}")
         print(f"视频: {self.video_name}")
         print(f"输出目录: {self.output_dir}")
@@ -85,6 +87,8 @@ class VideoAnalyzer:
         
         detector = SceneDetector(threshold=threshold)
         scenes_info, scene_list = detector.detect_scenes(self.video_path)
+        
+        self.scene_detection_config = dict(detector.detection_config)
         
         print(f"✓ 检测到 {len(scenes_info)} 个场景")
         
@@ -181,6 +185,7 @@ class VideoAnalyzer:
             "subtitle_removed": self.original_video_path != self.video_path,
             "output_directory": self.output_dir,
             "total_scenes": len(scenes_info) if scenes_info else 0,
+            "scene_detection": self.scene_detection_config,
             "scenes": scenes_info or [],
             "transcript": transcript_result["text"] if transcript_result else None,
             "transcript_segments": transcript_result["segments"] if transcript_result else []
