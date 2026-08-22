@@ -163,19 +163,19 @@ python3 src/utils/jianying_draft_exporter.py \
 
 ## 常用参数
 
-| 参数 | 说明 |
-|------|------|
-| `-o, --output` | 输出根目录，默认 `output` |
-| `-t, --threshold` | 分镜阈值，越小切得越碎 |
-| `--whisper-model` | `tiny / base / small / medium / large` |
-| `--subtitle-bar-height` | 手动指定底部字幕区域高度 |
-| `--export-jianying` | 分析完成后直接导出剪映草稿 |
-| `--compose-with-pool` | 使用视频池自动补尾并导出剪映 |
-| `--head-mode` | `first-scene / fixed-seconds / none` |
-| `--head-duration` | `fixed-seconds` 模式下保留的秒数 |
-| `--style-template` | `emotion / basic`，默认 `emotion` |
-| `--draft-name` | 导出的剪映草稿名 |
-| `--draft-root` | 剪映草稿箱目录，默认使用本机目录 |
+| 参数                      | 说明                                     |
+| ----------------------- | -------------------------------------- |
+| `-o, --output`          | 输出根目录，默认 `output`                      |
+| `-t, --threshold`       | 分镜阈值，越小切得越碎                            |
+| `--whisper-model`       | `tiny / base / small / medium / large` |
+| `--subtitle-bar-height` | 手动指定底部字幕区域高度                           |
+| `--export-jianying`     | 分析完成后直接导出剪映草稿                          |
+| `--compose-with-pool`   | 使用视频池自动补尾并导出剪映                         |
+| `--head-mode`           | `first-scene / fixed-seconds / none`   |
+| `--head-duration`       | `fixed-seconds` 模式下保留的秒数               |
+| `--style-template`      | `emotion / basic`，默认 `emotion`         |
+| `--draft-name`          | 导出的剪映草稿名                               |
+| `--draft-root`          | 剪映草稿箱目录，默认使用本机目录                       |
 
 ## 输出结构
 
@@ -204,7 +204,7 @@ output/{视频名}_{时间戳}/
 
 ## 剪映导出说明
 
-导出后的草稿会写入剪映草稿箱目录，并自动登记到草稿索引里。  
+导出后的草稿会写入剪映草稿箱目录，并自动登记到草稿索引里。\
 如果剪映正在运行，建议导入后完全退出再重新打开一次。
 
 模板已经内置在当前项目中：
@@ -304,3 +304,4 @@ python3 -m unittest discover tests
 1. 视频池增加画幅过滤、重复素材抑制、最小时长过滤
 2. 剪映字幕样式做成可配置
 3. 增加“直接渲染成 mp4”的离线导出链路
+
