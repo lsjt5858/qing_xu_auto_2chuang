@@ -2,6 +2,7 @@
 视频字幕去除模块 - 去除底部黑边中的烧录字幕，并清理底部区域的固定半透明水印
 """
 import os
+import shutil
 import statistics
 import subprocess
 import tempfile
@@ -470,9 +471,14 @@ class SubtitleRemover:
                 temp_files.append(watermark_info["path"])
 
             if not pre_filters and (not detected_height or detected_height <= 0):
-                raise ValueError(
-                    "未检测到底部字幕黑边或底部固定水印，请使用 --subtitle-bar-height 手动指定像素高度。"
-                )
+                shutil.copy2(video_path, output_path)
+                return {
+                    "output_path": output_path,
+                    "subtitle_bar_height": 0,
+                    "watermark_removed": False,
+                    "watermark_mask_area": 0,
+                    "processing_skipped": True
+                }
 
             cmd = [
                 "ffmpeg",
@@ -503,5 +509,6 @@ class SubtitleRemover:
             "output_path": output_path,
             "subtitle_bar_height": int(detected_height or 0),
             "watermark_removed": bool(pre_filters),
-            "watermark_mask_area": int(watermark_info["mask_area"]) if watermark_info else 0
+            "watermark_mask_area": int(watermark_info["mask_area"]) if watermark_info else 0,
+            "processing_skipped": False
         }

@@ -1,6 +1,6 @@
-# qing_xu_auto_2chuang
+# 镜流工坊
 
-这是一个面向短视频二创的本地处理流水线，用来把原始视频整理成可复用素材，并直接生成剪映草稿。
+原名：`柴视频`。这是一个面向短视频二创的本地处理流水线，用来把原始视频整理成可复用素材，并直接生成剪映草稿。
 
 它现在能做的事情很明确：
 
@@ -10,7 +10,7 @@
 - 组合混剪：保留原视频头部，再按字幕节奏从视频池补尾
 - 导出剪映草稿：直接写入剪映草稿箱，可继续在剪映里调整和导出
 
-当前项目名统一为 `qing_xu_auto_2chuang`。
+当前仓库目录仍然是 `chai_shi_pin`，这里只先完成文档层的命名调整，避免影响现有脚本和环境。
 
 ## 适合什么场景
 
@@ -36,8 +36,8 @@
 ## 安装
 
 ```bash
-git clone https://github.com/lsjt5858/qing_xu_auto_2chuang.git
-cd qing_xu_auto_2chuang
+git clone https://github.com/lsjt5858/chai_shi_pin.git
+cd chai_shi_pin
 
 python3 -m venv venv
 source venv/bin/activate
@@ -77,9 +77,6 @@ output/视频名_时间戳/
 ./run.sh "/path/to/video_dir"
 ```
 
-重复运行时，如果 `output/<视频名>_时间戳/video_no_subtitles.mp4`
-已经存在，该源视频会被直接跳过，不再创建新目录或执行后续处理。
-
 ### 3. 批量处理多个文件
 
 ```bash
@@ -94,48 +91,7 @@ output/视频名_时间戳/
 ./run.sh "/path/to/video.mp4" --audio-only
 ```
 
-### 5. 生成 AI 剧情语义分镜（同时保留原始切镜）
-
-默认配置支持智谱和火山方舟。真实 API Key 不写入配置文件，只在运行时通过环境变量传入。
-
-使用智谱：
-
-```bash
-ZAI_API_KEY="你的智谱 API Key" \
-  ./run.sh "/path/to/video.mp4" --semantic-scenes
-```
-
-使用火山方舟，其中 `ARK_MODEL` 是视觉模型名或推理接入点 ID：
-
-```bash
-SEMANTIC_SCENE_PROVIDER="volcengine" \
-ARK_API_KEY="你的火山方舟 API Key" \
-ARK_MODEL="ep-xxxxxxxx" \
-  ./run.sh "/path/to/video.mp4" --semantic-scenes
-```
-
-未指定 `SEMANTIC_SCENE_PROVIDER` 时，脚本会优先选择当前环境中已设置 API Key
-的厂商；都未设置时使用 `default_provider`（默认 `zhipu`）。同时配置多个 Key
-时，可将 `SEMANTIC_SCENE_PROVIDER` 设置为 `zhipu` 或 `volcengine`。
-
-处理逻辑：
-
-- `scenes/` 保留按画面切换检测到的原始切镜
-- AI 综合每个切镜的代表帧、时间范围和对应台词
-- 同一人物、地点、事件、动作目标或表达目的连续时，即使发生正反打、景别或机位变化，也会聚合成同一个剧情语义分镜
-- `semantic_scenes/` 输出最终聚合视频，`semantic_scenes.json` 保存分组依据与原始切镜映射
-- 输入源视频或源视频目录时，只要已有 `video_no_subtitles.mp4`，即使指定
-  `--semantic-scenes` 也会跳过该视频的全部处理
-- 如需对已有结果补做 AI 聚合，请直接输入对应的结果目录：
-  `./run.sh "output/视频名_时间戳" --semantic-scenes`
-
-模型地址、模型名、超时和环境变量名统一配置在：
-
-```text
-config/semantic_scenes.json
-```
-
-### 6. 分析完直接导入剪映
+### 5. 分析完直接导入剪映
 
 ```bash
 ./run.sh "/path/to/video.mp4" --export-jianying
@@ -147,7 +103,7 @@ config/semantic_scenes.json
 - 双语时会把英文折叠到同一条文本轨里，按“中文在上、英文在下”的样式输出
 - 字号、描边、位置沿用参考草稿 `0406-03` 的情绪类风格
 
-### 7. 用视频池自动组合后导入剪映
+### 6. 用视频池自动组合后导入剪映
 
 ```bash
 ./run.sh "/path/to/video.mp4" \
@@ -163,7 +119,7 @@ config/semantic_scenes.json
 - 视频池目录会递归扫描子目录
 - 导出结果是剪映草稿，不是直接渲染好的最终 mp4
 
-### 8. 指定视频头规则
+### 7. 指定视频头规则
 
 固定保留前 3 秒：
 
@@ -182,14 +138,14 @@ config/semantic_scenes.json
   --head-mode none
 ```
 
-### 9. 已有 output 目录，直接导出剪映
+### 8. 已有 output 目录，直接导出剪映
 
 ```bash
 python3 src/utils/jianying_draft_exporter.py \
   "output/某个分析结果目录"
 ```
 
-### 10. 已有 output 目录，直接组合并导出剪映
+### 9. 已有 output 目录，直接组合并导出剪映
 
 ```bash
 python3 src/utils/jianying_draft_exporter.py \
@@ -197,7 +153,7 @@ python3 src/utils/jianying_draft_exporter.py \
   --compose-with-pool "/path/to/shot_pool"
 ```
 
-### 11. 收集分镜素材
+### 10. 收集分镜素材
 
 ```bash
 ./collect_scenes.sh
@@ -213,8 +169,6 @@ python3 src/utils/jianying_draft_exporter.py \
 | `-t, --threshold`       | 分镜阈值，越小切得越碎                            |
 | `--whisper-model`       | `tiny / base / small / medium / large` |
 | `--subtitle-bar-height` | 手动指定底部字幕区域高度                           |
-| `--semantic-scenes`     | 调用视觉模型生成剧情语义分镜，同时保留原始切镜                  |
-| `--semantic-scenes-config` | 语义分镜模型配置文件，默认 `config/semantic_scenes.json` |
 | `--export-jianying`     | 分析完成后直接导出剪映草稿                          |
 | `--compose-with-pool`   | 使用视频池自动补尾并导出剪映                         |
 | `--head-mode`           | `first-scene / fixed-seconds / none`   |
@@ -232,11 +186,6 @@ output/{视频名}_{时间戳}/
 │   ├── Scene-001.mp4
 │   ├── Scene-002.mp4
 │   └── ...
-├── semantic_scenes/             # 启用 --semantic-scenes 时生成
-│   ├── SemanticScene-001.mp4
-│   └── ...
-├── semantic_scene_contact_sheet.jpg
-├── semantic_scenes.json
 ├── audio.mp3
 ├── transcript.txt
 ├── transcript_detailed.json
@@ -247,10 +196,7 @@ output/{视频名}_{时间戳}/
 字段职责：
 
 - `video_no_subtitles.mp4`：清洗后的源视频
-- `scenes/`：按画面切换拆出的原始切镜素材
-- `semantic_scenes/`：按剧情语义聚合后的分镜视频
-- `semantic_scene_contact_sheet.jpg`：提交给视觉模型的切镜代表帧联系表
-- `semantic_scenes.json`：语义分镜时间范围、分组理由及原始切镜映射
+- `scenes/`：拆好的分镜素材
 - `audio.mp3`：音频基准
 - `transcript_detailed.json`：字幕时序基准
 - `report.json`：整个输出目录的总报告
@@ -358,3 +304,4 @@ python3 -m unittest discover tests
 1. 视频池增加画幅过滤、重复素材抑制、最小时长过滤
 2. 剪映字幕样式做成可配置
 3. 增加“直接渲染成 mp4”的离线导出链路
+

@@ -10,7 +10,8 @@ DEFAULT_WHISPER_MODEL = "base"
 # 场景检测配置
 SCENE_DETECTION = {
     "threshold": DEFAULT_THRESHOLD,
-    "min_scene_length": 0.5,  # 最小场景长度（秒）
+    "adaptive_threshold": 3.0,
+    "min_scene_length": 0.5,
 }
 
 # 音频配置

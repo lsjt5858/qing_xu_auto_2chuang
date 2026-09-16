@@ -1,7 +1,10 @@
 """
 字幕去除器测试
 """
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 
@@ -76,6 +79,72 @@ class TestSubtitleRemover(unittest.TestCase):
 
         self.assertGreater(int(selected[54:60, 92:116].sum()), 0)
         self.assertEqual(int(selected[4:12, 176:190].sum()), 0)
+    def test_remove_copies_source_when_nothing_is_detected(self):
+        """无字幕黑边或固定水印时保留原视频，不应中断后续分解。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source.mp4"
+            output = Path(tmp) / "output" / "video_no_subtitles.mp4"
+            source.write_bytes(b"source-video")
+
+            capture = MagicMock()
+            capture.isOpened.return_value = True
+            capture.get.return_value = 1080
+            capture.release.return_value = None
+
+            with (
+                patch.object(
+                    self.remover,
+                    "detect_subtitle_bar_height",
+                    return_value=None,
+                ),
+                patch.object(
+                    self.remover,
+                    "create_watermark_mask",
+                    return_value=None,
+                ),
+                patch("src.core.subtitle_remover.cv2.VideoCapture", return_value=capture),
+                patch("src.core.subtitle_remover.subprocess.run") as run,
+            ):
+                result = self.remover.remove(str(source), str(output))
+
+            self.assertEqual(output.read_bytes(), b"source-video")
+            self.assertEqual(result["output_path"], str(output))
+            self.assertTrue(result["processing_skipped"])
+            self.assertEqual(result["subtitle_bar_height"], 0)
+            self.assertFalse(result["watermark_removed"])
+            run.assert_not_called()
+
+    def test_remove_still_runs_ffmpeg_when_bar_height_is_provided(self):
+        """显式提供字幕高度时仍执行原有 ffmpeg 处理。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source.mp4"
+            output = Path(tmp) / "output" / "video_no_subtitles.mp4"
+            source.write_bytes(b"source-video")
+
+            capture = MagicMock()
+            capture.isOpened.return_value = True
+            capture.get.return_value = 1080
+            capture.release.return_value = None
+
+            with (
+                patch.object(
+                    self.remover,
+                    "create_watermark_mask",
+                    return_value=None,
+                ),
+                patch("src.core.subtitle_remover.cv2.VideoCapture", return_value=capture),
+                patch("src.core.subtitle_remover.subprocess.run") as run,
+            ):
+                run.return_value = MagicMock(returncode=0, stderr="", stdout="")
+                result = self.remover.remove(
+                    str(source),
+                    str(output),
+                    subtitle_bar_height=96,
+                )
+
+            self.assertFalse(result["processing_skipped"])
+            self.assertEqual(result["subtitle_bar_height"], 96)
+            run.assert_called_once()
 
 
 if __name__ == "__main__":

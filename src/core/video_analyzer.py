@@ -34,6 +34,8 @@ class VideoAnalyzer:
         self.output_dir = os.path.join(base_output_dir, f"{self.video_name}_{timestamp}")
         os.makedirs(self.output_dir, exist_ok=True)
         
+        self.scene_detection_config = None
+        
         print(f"\n{'='*60}")
         print(f"视频: {self.video_name}")
         print(f"输出目录: {self.output_dir}")
@@ -57,15 +59,18 @@ class VideoAnalyzer:
 
         self.video_path = result["output_path"]
 
-        if result["subtitle_bar_height"] > 0:
-            print(f"✓ 检测到底部字幕黑边高度: {result['subtitle_bar_height']} 像素")
+        if result.get("processing_skipped", False):
+            print("✓ 未检测到可处理的字幕黑边或固定水印，已保留原画面并继续分解")
         else:
-            print("✓ 未检测到底部字幕黑边，已跳过黑边裁切")
+            if result["subtitle_bar_height"] > 0:
+                print(f"✓ 检测到底部字幕黑边高度: {result['subtitle_bar_height']} 像素")
+            else:
+                print("✓ 未检测到底部字幕黑边，已跳过黑边裁切")
 
-        if result["watermark_removed"]:
-            print(f"✓ 已清理底部固定透明水印（掩码面积: {result['watermark_mask_area']} 像素）")
-        else:
-            print("✓ 未检测到底部固定透明水印，已跳过去水印")
+            if result["watermark_removed"]:
+                print(f"✓ 已清理底部固定透明水印（掩码面积: {result['watermark_mask_area']} 像素）")
+            else:
+                print("✓ 未检测到底部固定透明水印，已跳过去水印")
 
         print(f"✓ 预处理视频已保存到: {self.video_path}")
 
@@ -85,6 +90,8 @@ class VideoAnalyzer:
         
         detector = SceneDetector(threshold=threshold)
         scenes_info, scene_list = detector.detect_scenes(self.video_path)
+        
+        self.scene_detection_config = dict(detector.detection_config)
         
         print(f"✓ 检测到 {len(scenes_info)} 个场景")
         
@@ -161,13 +168,14 @@ class VideoAnalyzer:
         
         return result
     
-    def generate_report(self, scenes_info, transcript_result):
+    def generate_report(self, scenes_info, transcript_result, semantic_scenes=None):
         """
         生成分析报告
-        
+
         Args:
-            scenes_info: 场景信息列表
+            scenes_info: 原始切镜信息列表
             transcript_result: 转录结果
+            semantic_scenes: AI 聚合后的剧情语义分镜列表
             
         Returns:
             dict: 完整报告
@@ -181,7 +189,10 @@ class VideoAnalyzer:
             "subtitle_removed": self.original_video_path != self.video_path,
             "output_directory": self.output_dir,
             "total_scenes": len(scenes_info) if scenes_info else 0,
+            "scene_detection": self.scene_detection_config,
             "scenes": scenes_info or [],
+            "semantic_scene_count": len(semantic_scenes) if semantic_scenes else 0,
+            "semantic_scenes": semantic_scenes or [],
             "transcript": transcript_result["text"] if transcript_result else None,
             "transcript_segments": transcript_result["segments"] if transcript_result else []
         }

@@ -1,0 +1,23 @@
+{
+  "default_provider": "zhipu",
+  "provider_env": "SEMANTIC_SCENE_PROVIDER",
+  "providers": {
+    "zhipu": {
+      "provider": "zhipu-openai-compatible",
+      "base_url": "https://open.bigmodel.cn/api/paas/v4/",
+      "model": "glm-4.6v",
+      "api_key_env": "ZAI_API_KEY"
+    },
+    "volcengine": {
+      "provider": "volcengine-ark-openai-compatible",
+      "base_url": "https://ark.cn-beijing.volces.com/api/v3/",
+      "model_env": "ARK_MODEL",
+      "api_key_env": "ARK_API_KEY"
+    }
+  },
+  "timeout_seconds": 120,
+  "max_retries": 2,
+  "frames_per_scene": 3,
+  "max_tokens": 1600,
+  "temperature": 0.1
+}
