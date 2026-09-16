@@ -3,6 +3,7 @@
 """
 import argparse
 import os
+from pathlib import Path
 
 from .utils.file_utils import read_video_list
 from .utils.batch_processor import BatchProcessor
@@ -71,6 +72,10 @@ urls.txt 格式示例:
                        help="只导出去字幕/去水印后的预处理视频，不执行其他分析步骤")
     parser.add_argument("--subtitle-bar-height", type=int,
                        help="手动指定底部字幕黑边高度（像素）")
+    parser.add_argument("--semantic-scenes", action="store_true",
+                       help="调用视觉模型把连续原始切镜聚合为剧情语义分镜，并同时保留两级结果")
+    parser.add_argument("--semantic-scenes-config", default="config/semantic_scenes.json",
+                       help="AI 语义分镜配置文件 (默认: config/semantic_scenes.json)")
     parser.add_argument("--export-jianying", action="store_true",
                        help="分析完成后自动导出为剪映草稿")
     parser.add_argument("--compose-with-pool",
@@ -101,6 +106,50 @@ def is_url(path):
     return path.startswith(('http://', 'https://', 'www.'))
 
 
+def collect_directory_inputs(directory, include_existing_outputs=False):
+    """扫描目录中的源视频；语义模式下同时识别已有分析结果目录。"""
+    root = Path(directory)
+    result_dirs = []
+
+    if include_existing_outputs:
+        if (
+            (root / "report.json").is_file()
+            and (root / BatchProcessor.TARGET_VIDEO_FILENAME).is_file()
+        ):
+            return [], [str(root)]
+
+        result_dirs = sorted(
+            str(child)
+            for child in root.iterdir()
+            if child.is_dir()
+            and (child / "report.json").is_file()
+            and (child / BatchProcessor.TARGET_VIDEO_FILENAME).is_file()
+        )
+
+    video_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm', '.m4v', '.ts'}
+    videos = sorted(
+        str(child)
+        for child in root.iterdir()
+        if child.is_file()
+        and not child.name.startswith('._')
+        and child.suffix.lower() in video_extensions
+    )
+    return videos, result_dirs
+
+
+def validate_semantic_scene_credentials(config_path):
+    """在任何耗时视频处理前校验 AI 配置和密钥。"""
+    from .core.semantic_scene_grouper import SemanticSceneConfig
+
+    config = SemanticSceneConfig.load(config_path)
+    if not os.getenv(config.api_key_env, "").strip():
+        raise RuntimeError(
+            f"启用 AI 语义分镜需要先设置环境变量 {config.api_key_env}；"
+            "本次未开始视频处理。"
+        )
+    return config
+
+
 def main():
     """主函数"""
     parser = create_parser()
@@ -117,8 +166,9 @@ def main():
         args.draft_root = str(draft_root)
         print(f"✓ 剪映草稿箱路径已确认: {draft_root}")
     
-    # 收集所有要处理的视频/链接
+    # 收集所有要处理的视频/链接，以及可复用的已有分析结果目录
     video_list = []
+    existing_output_dirs = []
     
     if args.list:
         # 从文件读取视频列表
@@ -130,29 +180,32 @@ def main():
             return
     
     if args.videos:
-        VIDEO_EXTENSIONS = ('.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm')
         for item in args.videos:
             item = item.strip()
             if os.path.isdir(item):
-                dir_videos = sorted(
-                    os.path.join(item, f) for f in os.listdir(item)
-                    if not f.startswith('._') and f.lower().endswith(VIDEO_EXTENSIONS)
+                dir_videos, dir_outputs = collect_directory_inputs(
+                    item,
+                    include_existing_outputs=getattr(args, "semantic_scenes", False),
                 )
                 if dir_videos:
                     print(f"从目录 '{item}' 扫描到 {len(dir_videos)} 个视频文件")
                     video_list.extend(dir_videos)
-                else:
-                    print(f"警告: 目录 '{item}' 中未找到视频文件")
+                if dir_outputs:
+                    print(f"从目录 '{item}' 扫描到 {len(dir_outputs)} 个已有分析结果")
+                    existing_output_dirs.extend(dir_outputs)
+                if not dir_videos and not dir_outputs:
+                    print(f"警告: 目录 '{item}' 中未找到视频文件或可复用的分析结果")
             else:
                 video_list.append(item)
     
-    if not video_list:
-        print("错误: 请提供至少一个视频文件/链接或使用 --list 指定列表文件")
+    if not video_list and not existing_output_dirs:
+        print("错误: 请提供至少一个视频文件/链接、已有分析结果目录，或使用 --list 指定列表文件")
         parser.print_help()
         return
     
     # 去重
     video_list = list(dict.fromkeys(video_list))
+    existing_output_dirs = list(dict.fromkeys(existing_output_dirs))
     
     # 分离 URL 和本地文件
     urls = [item for item in video_list if is_url(item)]
@@ -175,14 +228,37 @@ def main():
         print("示例: ./run.sh --list urls.txt -d")
         return
     
-    if not local_files:
-        print("错误: 没有可处理的视频文件")
+    if not local_files and not existing_output_dirs:
+        print("错误: 没有可处理的视频文件或已有分析结果")
         return
     
-    # 批量处理
     processor = BatchProcessor(output_dir=args.output)
-    result = processor.process_batch(local_files, args)
-    processor.print_summary(result)
+
+    if getattr(args, "semantic_scenes", False):
+        pending_local_files = any(
+            os.path.exists(video_path)
+            and processor._find_existing_target_video(video_path) is None
+            for video_path in local_files
+        )
+        pending_output_dirs = any(
+            not (Path(output_dir) / "semantic_scenes.json").is_file()
+            for output_dir in existing_output_dirs
+        )
+        if pending_local_files or pending_output_dirs:
+            try:
+                validate_semantic_scene_credentials(args.semantic_scenes_config)
+            except (OSError, ValueError, RuntimeError) as exc:
+                print(f"错误: {exc}")
+                return
+
+    if existing_output_dirs:
+        print(f"\n开始复用 {len(existing_output_dirs)} 个已有分析结果生成 AI 剧情语义分镜...")
+        for output_dir in existing_output_dirs:
+            processor.process_existing_output_directory(output_dir, args)
+
+    if local_files:
+        result = processor.process_batch(local_files, args)
+        processor.print_summary(result)
 
 
 if __name__ == "__main__":

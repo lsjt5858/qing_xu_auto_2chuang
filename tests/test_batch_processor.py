@@ -1,4 +1,5 @@
 import importlib
+import json
 import sys
 import tempfile
 import unittest
@@ -121,6 +122,86 @@ class TestBatchProcessorExistingOutput(unittest.TestCase):
                 str(input_video),
                 str(output_root),
             )
+
+    def test_existing_target_skips_semantic_grouping(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            input_video = Path(tmp) / "example.mp4"
+            input_video.write_bytes(b"source")
+            output_root = Path(tmp) / "output"
+            output_dir = output_root / "example_20260916_134659"
+            target = output_dir / "video_no_subtitles.mp4"
+            target.parent.mkdir(parents=True)
+            target.write_bytes(b"processed")
+            report_path = output_dir / "report.json"
+            report_path.write_text(
+                json.dumps(
+                    {
+                        "scenes": [
+                            {
+                                "scene_number": 1,
+                                "start_time": 0.0,
+                                "end_time": 2.0,
+                            },
+                            {
+                                "scene_number": 2,
+                                "start_time": 2.0,
+                                "end_time": 4.0,
+                            },
+                        ],
+                        "transcript_segments": [
+                            {"start": 0.0, "end": 4.0, "text": "连续剧情"}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            args = SimpleNamespace(
+                semantic_scenes=True,
+                semantic_scenes_config="config/semantic_scenes.json",
+            )
+            processor = BatchProcessor(output_dir=str(output_root))
+            grouper = MagicMock()
+            semantic_module = ModuleType("src.core.semantic_scene_grouper")
+            semantic_module.SemanticSceneGrouper = MagicMock()
+            semantic_module.SemanticSceneGrouper.from_config.return_value = grouper
+
+            with (
+                patch.object(batch_processor_module, "VideoAnalyzer") as analyzer_class,
+                patch.dict(
+                    sys.modules,
+                    {"src.core.semantic_scene_grouper": semantic_module},
+                ),
+            ):
+                result = processor.process_video(str(input_video), args)
+
+            self.assertTrue(result)
+            analyzer_class.assert_not_called()
+            grouper.group_and_export.assert_not_called()
+            updated_report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertNotIn("semantic_scene_count", updated_report)
+            self.assertNotIn("semantic_scenes", updated_report)
+
+    def test_existing_semantic_result_skips_all_processing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            input_video = Path(tmp) / "example.mp4"
+            input_video.write_bytes(b"source")
+            output_root = Path(tmp) / "output"
+            output_dir = output_root / "example_20260916_134659"
+            target = output_dir / "video_no_subtitles.mp4"
+            target.parent.mkdir(parents=True)
+            target.write_bytes(b"processed")
+            (output_dir / "semantic_scenes.json").write_text("[]", encoding="utf-8")
+            args = SimpleNamespace(semantic_scenes=True)
+            processor = BatchProcessor(output_dir=str(output_root))
+
+            with patch.object(
+                batch_processor_module,
+                "VideoAnalyzer",
+            ) as analyzer_class:
+                result = processor.process_video(str(input_video), args)
+
+            self.assertTrue(result)
+            analyzer_class.assert_not_called()
 
     def test_missing_source_fails_even_when_target_exists(self):
         with tempfile.TemporaryDirectory() as tmp:

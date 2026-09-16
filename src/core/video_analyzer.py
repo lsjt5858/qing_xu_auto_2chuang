@@ -168,13 +168,14 @@ class VideoAnalyzer:
         
         return result
     
-    def generate_report(self, scenes_info, transcript_result):
+    def generate_report(self, scenes_info, transcript_result, semantic_scenes=None):
         """
         生成分析报告
-        
+
         Args:
-            scenes_info: 场景信息列表
+            scenes_info: 原始切镜信息列表
             transcript_result: 转录结果
+            semantic_scenes: AI 聚合后的剧情语义分镜列表
             
         Returns:
             dict: 完整报告
@@ -190,6 +191,8 @@ class VideoAnalyzer:
             "total_scenes": len(scenes_info) if scenes_info else 0,
             "scene_detection": self.scene_detection_config,
             "scenes": scenes_info or [],
+            "semantic_scene_count": len(semantic_scenes) if semantic_scenes else 0,
+            "semantic_scenes": semantic_scenes or [],
             "transcript": transcript_result["text"] if transcript_result else None,
             "transcript_segments": transcript_result["segments"] if transcript_result else []
         }

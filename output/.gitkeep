@@ -1,2 +1,0 @@
-# 此文件用于保持 output 目录在 git 中存在
-# 但 output 目录下的所有其他文件都会被 .gitignore 忽略
