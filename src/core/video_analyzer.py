@@ -35,7 +35,7 @@ class VideoAnalyzer:
         os.makedirs(self.output_dir, exist_ok=True)
         
         self.scene_detection_config = None
-        
+
         print(f"\n{'='*60}")
         print(f"视频: {self.video_name}")
         print(f"输出目录: {self.output_dir}")
@@ -92,7 +92,7 @@ class VideoAnalyzer:
         scenes_info, scene_list = detector.detect_scenes(self.video_path)
         
         self.scene_detection_config = dict(detector.detection_config)
-        
+
         print(f"✓ 检测到 {len(scenes_info)} 个场景")
         
         for scene in scenes_info:
