@@ -2,6 +2,7 @@
 批量处理器 - 处理多个视频
 """
 import os
+import re
 import time
 from pathlib import Path
 
@@ -14,6 +15,8 @@ from ..core.video_analyzer import VideoAnalyzer
 
 class BatchProcessor:
     """批量视频处理器"""
+
+    TARGET_VIDEO_FILENAME = "video_no_subtitles.mp4"
     
     def __init__(self, output_dir="output"):
         """
@@ -25,6 +28,27 @@ class BatchProcessor:
         self.output_dir = output_dir
         self.success_count = 0
         self.failed_videos = []
+
+    def _find_existing_target_video(self, video_path):
+        output_root = Path(self.output_dir)
+        if not output_root.is_dir():
+            return None
+
+        video_name = Path(video_path).stem
+        output_name_pattern = re.compile(
+            rf"{re.escape(video_name)}_\d{{8}}_\d{{6}}"
+        )
+
+        for candidate_dir in sorted(output_root.iterdir(), reverse=True):
+            if (
+                candidate_dir.is_dir()
+                and output_name_pattern.fullmatch(candidate_dir.name)
+            ):
+                target_video = candidate_dir / self.TARGET_VIDEO_FILENAME
+                if target_video.is_file():
+                    return target_video
+
+        return None
 
     def _maybe_export_jianying(self, analyzer, video_path, args):
         should_export = getattr(args, "export_jianying", False) or getattr(args, "compose_with_pool", None)
@@ -80,8 +104,16 @@ class BatchProcessor:
         if not os.path.exists(video_path):
             print(f"✗ 错误: 找不到视频文件 '{video_path}'")
             return False
-        
+
         try:
+            existing_target = self._find_existing_target_video(video_path)
+            if existing_target is not None:
+                print(
+                    f"✓ 跳过 '{Path(video_path).name}': "
+                    f"目标视频已存在于 {existing_target}"
+                )
+                return True
+
             analyzer = VideoAnalyzer(video_path, self.output_dir)
             
             scenes_info = None

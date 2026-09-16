@@ -77,6 +77,9 @@ output/视频名_时间戳/
 ./run.sh "/path/to/video_dir"
 ```
 
+重复运行时，如果 `output/<视频名>_时间戳/video_no_subtitles.mp4`
+已经存在，该源视频会被直接跳过，不再创建新目录或执行后续处理。
+
 ### 3. 批量处理多个文件
 
 ```bash
