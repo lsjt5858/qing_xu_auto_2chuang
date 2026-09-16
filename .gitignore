@@ -66,4 +66,3 @@ htmlcov/
 *.tmp
 temp/
 .claude/
-.worktrees/

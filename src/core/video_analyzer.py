@@ -59,15 +59,18 @@ class VideoAnalyzer:
 
         self.video_path = result["output_path"]
 
-        if result["subtitle_bar_height"] > 0:
-            print(f"✓ 检测到底部字幕黑边高度: {result['subtitle_bar_height']} 像素")
+        if result.get("processing_skipped", False):
+            print("✓ 未检测到可处理的字幕黑边或固定水印，已保留原画面并继续分解")
         else:
-            print("✓ 未检测到底部字幕黑边，已跳过黑边裁切")
+            if result["subtitle_bar_height"] > 0:
+                print(f"✓ 检测到底部字幕黑边高度: {result['subtitle_bar_height']} 像素")
+            else:
+                print("✓ 未检测到底部字幕黑边，已跳过黑边裁切")
 
-        if result["watermark_removed"]:
-            print(f"✓ 已清理底部固定透明水印（掩码面积: {result['watermark_mask_area']} 像素）")
-        else:
-            print("✓ 未检测到底部固定透明水印，已跳过去水印")
+            if result["watermark_removed"]:
+                print(f"✓ 已清理底部固定透明水印（掩码面积: {result['watermark_mask_area']} 像素）")
+            else:
+                print("✓ 未检测到底部固定透明水印，已跳过去水印")
 
         print(f"✓ 预处理视频已保存到: {self.video_path}")
 
