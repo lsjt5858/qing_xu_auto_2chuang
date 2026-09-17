@@ -66,3 +66,6 @@ htmlcov/
 *.tmp
 temp/
 .claude/
+# 本地敏感配置
+config/semantic_scenes.local.json
+.env
