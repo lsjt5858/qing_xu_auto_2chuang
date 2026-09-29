@@ -34,7 +34,6 @@
 - Python 3.10+
 - FFmpeg 和 FFprobe
 - macOS 上安装剪映专业版后可使用草稿导出
-- 下载网络视频时需要 `yt-dlp`
 - AI 语义分镜需要智谱或火山方舟 API Key
 
 安装：
@@ -50,13 +49,9 @@ pip install -r requirements.txt
 brew install ffmpeg
 ```
 
-如需下载网络视频，建议显式安装 `yt-dlp`：
-
-```bash
-pip install -U yt-dlp
-```
-
-`run.sh` 会直接执行 `source venv/bin/activate`，因此项目根目录必须存在名为 `venv` 的虚拟环境。
+`yt-dlp` 已包含在 `requirements.txt` 中。`run.sh` 会自动定位项目内的
+`venv/bin/python`，因此可以从任意工作目录调用，但项目根目录必须存在名为
+`venv` 的虚拟环境。
 
 ## 快速开始
 
@@ -112,10 +107,16 @@ output/<视频名>_<YYYYMMDD_HHMMSS>/
 只下载，不分析：
 
 ```bash
-./run.sh "https://example.com/video" -d --download-only
+./run.sh "https://example.com/video" --download-only
 ```
 
 下载文件保存在 `downloads/`。抖音和 TikTok 链接会尝试读取 Chrome Cookie，因此需要浏览器中已有可用登录态；其他站点能力取决于 `yt-dlp`。
+
+CLI 退出码约定：
+
+- `0`：全部处理成功
+- `1`：下载、分析或语义分镜执行失败，包括批量任务部分失败
+- `2`：参数、输入路径或配置错误
 
 ## 按需执行
 
@@ -352,7 +353,7 @@ output/<视频名>_<时间戳>/
 | --- | --- |
 | `-l, --list` | 从文本文件读取视频路径或链接 |
 | `-d, --download` | 使用 `yt-dlp` 下载链接 |
-| `--download-only` | 只下载，需同时传入 `-d` |
+| `--download-only` | 只下载，不分析；会自动启用下载 |
 | `-o, --output` | 输出根目录，默认 `output` |
 | `-t, --threshold` | 原始切镜阈值，默认 `27`，越小越敏感 |
 | `--scenes-only` | 不提取音频和文案 |
@@ -386,10 +387,31 @@ python3 src/utils/jianying_draft_exporter.py --help
 - `Scene-001` 复制到视频头目录
 - 其他 `Scene-*` 复制到视频身目录
 
-脚本中的 `HEAD_DIR` 和 `BODY_DIR` 是本机路径配置。首次使用前必须先修改为你自己的素材目录：
+脚本默认只预览，不会创建目录或复制文件：
 
 ```bash
-./collect_scenes.sh
+./collect_scenes.sh \
+  --head-dir "/path/to/head_pool" \
+  --body-dir "/path/to/body_pool"
+```
+
+确认预览结果后实际执行：
+
+```bash
+./collect_scenes.sh \
+  --head-dir "/path/to/head_pool" \
+  --body-dir "/path/to/body_pool" \
+  --execute
+```
+
+指定其他分析结果目录：
+
+```bash
+./collect_scenes.sh \
+  --output-dir "/path/to/output" \
+  --head-dir "/path/to/head_pool" \
+  --body-dir "/path/to/body_pool" \
+  --execute
 ```
 
 ## Feature Flags

@@ -11,6 +11,11 @@ from .core.video_downloader import VideoDownloader
 from .exporters.jianying import resolve_draft_root
 
 
+DEFAULT_SEMANTIC_SCENES_CONFIG = (
+    Path(__file__).resolve().parents[1] / "config" / "semantic_scenes.json"
+)
+
+
 def create_parser():
     """创建命令行参数解析器"""
     parser = argparse.ArgumentParser(
@@ -74,7 +79,7 @@ urls.txt 格式示例:
                        help="手动指定底部字幕黑边高度（像素）")
     parser.add_argument("--semantic-scenes", action="store_true",
                        help="调用视觉模型把连续原始切镜聚合为剧情语义分镜，并同时保留两级结果")
-    parser.add_argument("--semantic-scenes-config", default="config/semantic_scenes.json",
+    parser.add_argument("--semantic-scenes-config", default=str(DEFAULT_SEMANTIC_SCENES_CONFIG),
                        help="AI 语义分镜配置文件 (默认: config/semantic_scenes.json)")
     parser.add_argument("--export-jianying", action="store_true",
                        help="分析完成后自动导出为剪映草稿")
@@ -150,10 +155,13 @@ def validate_semantic_scene_credentials(config_path):
     return config
 
 
-def main():
+def main() -> int:
     """主函数"""
     parser = create_parser()
     args = parser.parse_args()
+
+    if args.download_only:
+        args.download = True
 
     if args.remove_subtitles_only:
         args.remove_subtitles = True
@@ -177,7 +185,7 @@ def main():
             print(f"从 '{args.list}' 读取到 {len(video_list)} 个项目")
         except FileNotFoundError:
             print(f"错误: 找不到列表文件 '{args.list}'")
-            return
+            return 2
     
     if args.videos:
         for item in args.videos:
@@ -201,7 +209,7 @@ def main():
     if not video_list and not existing_output_dirs:
         print("错误: 请提供至少一个视频文件/链接、已有分析结果目录，或使用 --list 指定列表文件")
         parser.print_help()
-        return
+        return 2
     
     # 去重
     video_list = list(dict.fromkeys(video_list))
@@ -210,6 +218,11 @@ def main():
     # 分离 URL 和本地文件
     urls = [item for item in video_list if is_url(item)]
     local_files = [item for item in video_list if not is_url(item)]
+    download_failures = 0
+
+    if args.download_only and not urls:
+        print("错误: --download-only 需要至少一个视频链接")
+        return 2
     
     # 如果有 URL 且启用了下载，先下载
     if urls and args.download:
@@ -217,20 +230,21 @@ def main():
         
         print(f"\n检测到 {len(urls)} 个视频链接，开始下载...")
         downloaded_files = downloader.download_batch(urls)
+        download_failures = len(urls) - len(downloaded_files)
         local_files.extend(downloaded_files)
         
         if args.download_only:
             print(f"\n下载完成！文件保存在 downloads/ 目录")
-            return
+            return 1 if download_failures else 0
     elif urls and not args.download:
         print(f"\n警告: 检测到 {len(urls)} 个视频链接，但未启用下载功能")
         print("请添加 -d 或 --download 参数来下载视频")
         print("示例: ./run.sh --list urls.txt -d")
-        return
+        return 2
     
     if not local_files and not existing_output_dirs:
         print("错误: 没有可处理的视频文件或已有分析结果")
-        return
+        return 1 if download_failures else 2
     
     processor = BatchProcessor(output_dir=args.output)
 
@@ -249,17 +263,23 @@ def main():
                 validate_semantic_scene_credentials(args.semantic_scenes_config)
             except (OSError, ValueError, RuntimeError) as exc:
                 print(f"错误: {exc}")
-                return
+                return 2
 
+    existing_failures = 0
     if existing_output_dirs:
         print(f"\n开始复用 {len(existing_output_dirs)} 个已有分析结果生成 AI 剧情语义分镜...")
         for output_dir in existing_output_dirs:
-            processor.process_existing_output_directory(output_dir, args)
+            if not processor.process_existing_output_directory(output_dir, args):
+                existing_failures += 1
 
+    batch_failures = 0
     if local_files:
         result = processor.process_batch(local_files, args)
         processor.print_summary(result)
+        batch_failures = result["failed"]
+
+    return 1 if download_failures or existing_failures or batch_failures else 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

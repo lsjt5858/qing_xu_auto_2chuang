@@ -1,9 +1,10 @@
 """
 视频下载模块 - 支持从多个平台下载视频
 """
-import os
 import subprocess
+import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 class VideoDownloader:
@@ -16,34 +17,20 @@ class VideoDownloader:
         Args:
             output_dir: 下载目录
         """
-        self.output_dir = output_dir
-        os.makedirs(output_dir, exist_ok=True)
+        self.output_dir = Path(output_dir).expanduser().resolve()
+        self.output_dir.mkdir(parents=True, exist_ok=True)
     
     def check_yt_dlp(self):
         """检查 yt-dlp 是否已安装"""
         try:
             result = subprocess.run(
-                ["yt-dlp", "--version"],
+                [sys.executable, "-m", "yt_dlp", "--version"],
                 capture_output=True,
                 text=True,
                 timeout=5
             )
             return result.returncode == 0
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return False
-    
-    def install_yt_dlp(self):
-        """安装 yt-dlp"""
-        print("正在安装 yt-dlp...")
-        try:
-            subprocess.run(
-                ["pip", "install", "-U", "yt-dlp"],
-                check=True
-            )
-            print("✓ yt-dlp 安装成功")
-            return True
-        except subprocess.CalledProcessError as e:
-            print(f"✗ yt-dlp 安装失败: {e}")
+        except (OSError, subprocess.TimeoutExpired):
             return False
     
     def download(self, url, filename=None):
@@ -58,29 +45,35 @@ class VideoDownloader:
             str: 下载的视频文件路径，失败返回 None
         """
         if not self.check_yt_dlp():
-            print("未检测到 yt-dlp，正在安装...")
-            if not self.install_yt_dlp():
-                print("请手动安装 yt-dlp: pip install -U yt-dlp")
-                return None
+            print("✗ 当前 Python 环境未安装 yt-dlp")
+            print("请执行: pip install -r requirements.txt")
+            return None
         
         print(f"\n正在下载: {url}")
-        
-        # 构建下载命令
+
+        output_template = self.output_dir / (filename or "%(title)s.%(ext)s")
         cmd = [
-            "yt-dlp",
-            "--no-playlist",  # 不下载播放列表
-            "-o", os.path.join(self.output_dir, "%(title)s.%(ext)s"),  # 输出模板
+            sys.executable,
+            "-m",
+            "yt_dlp",
+            "--no-playlist",
+            "--no-simulate",
+            "--no-progress",
+            "--print",
+            "after_move:filepath",
+            "-o",
+            str(output_template),
         ]
-        
-        # 如果是抖音链接，添加特殊处理
-        if 'douyin.com' in url or 'tiktok.com' in url:
-            # 使用浏览器 cookies
+
+        parsed_url = url if "://" in url else f"https://{url}"
+        hostname = (urlsplit(parsed_url).hostname or "").lower()
+        uses_browser_cookies = any(
+            hostname == domain or hostname.endswith(f".{domain}")
+            for domain in ("douyin.com", "tiktok.com")
+        )
+        if uses_browser_cookies:
             cmd.extend(["--cookies-from-browser", "chrome"])
-        
-        # 如果指定了文件名
-        if filename:
-            cmd[-1] = os.path.join(self.output_dir, filename)
-        
+
         cmd.append(url)
         
         try:
@@ -92,15 +85,16 @@ class VideoDownloader:
             )
             
             if result.returncode == 0:
-                # 查找下载的文件
-                files = [f for f in Path(self.output_dir).glob("*") if not f.name.startswith('._')]
-                if files:
-                    latest_file = max(files, key=lambda x: x.stat().st_mtime)
-                    print(f"✓ 下载成功: {latest_file.name}")
-                    return str(latest_file)
-                else:
-                    print("✗ 下载失败: 找不到下载的文件")
-                    return None
+                for line in reversed(result.stdout.splitlines()):
+                    candidate = Path(line.strip()).expanduser()
+                    if not candidate.is_absolute():
+                        candidate = self.output_dir / candidate
+                    candidate = candidate.resolve()
+                    if candidate.is_file():
+                        print(f"✓ 下载成功: {candidate.name}")
+                        return str(candidate)
+                print("✗ 下载失败: yt-dlp 未返回有效的下载文件路径")
+                return None
             else:
                 error_msg = result.stderr
                 
