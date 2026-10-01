@@ -5,7 +5,7 @@ import argparse
 import os
 from pathlib import Path
 
-from .utils.file_utils import read_video_list
+from .utils.file_utils import extract_url, read_video_list
 from .utils.batch_processor import BatchProcessor
 from .core.video_downloader import VideoDownloader
 from .exporters.jianying import resolve_draft_root
@@ -204,7 +204,13 @@ def main() -> int:
                 if not dir_videos and not dir_outputs:
                     print(f"警告: 目录 '{item}' 中未找到视频文件或可复用的分析结果")
             else:
-                video_list.append(item)
+                extracted_url = extract_url(item)
+                if extracted_url:
+                    if extracted_url != item:
+                        print(f"从分享文本提取到视频链接: {extracted_url}")
+                    video_list.append(extracted_url)
+                else:
+                    video_list.append(item)
     
     if not video_list and not existing_output_dirs:
         print("错误: 请提供至少一个视频文件/链接、已有分析结果目录，或使用 --list 指定列表文件")
@@ -234,8 +240,18 @@ def main() -> int:
         local_files.extend(downloaded_files)
         
         if args.download_only:
-            print(f"\n下载完成！文件保存在 downloads/ 目录")
-            return 1 if download_failures else 0
+            if download_failures:
+                if downloaded_files:
+                    print(
+                        f"\n部分下载失败：成功 {len(downloaded_files)}/{len(urls)}，"
+                        "请查看上方错误信息。"
+                    )
+                    print("成功文件保存在 downloads/ 目录")
+                else:
+                    print("\n下载失败：未下载到任何视频，请查看上方错误信息。")
+                return 1
+            print("\n下载完成！文件保存在 downloads/ 目录")
+            return 0
     elif urls and not args.download:
         print(f"\n警告: 检测到 {len(urls)} 个视频链接，但未启用下载功能")
         print("请添加 -d 或 --download 参数来下载视频")

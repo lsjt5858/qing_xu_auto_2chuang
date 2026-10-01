@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import redirect_stdout
+from io import StringIO
 import subprocess
 import sys
 import tempfile
@@ -176,6 +178,72 @@ class TestVideoDownloader(unittest.TestCase):
                 downloader.download("www.douyin.com/video/123")
 
         self.assertIn("--cookies-from-browser", run.call_args.args[0])
+
+    def test_douyin_search_url_is_rejected_with_actionable_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            downloader = VideoDownloader(tmp)
+            output = StringIO()
+
+            with (
+                patch.object(downloader, "check_yt_dlp") as check_yt_dlp,
+                patch("src.core.video_downloader.subprocess.run") as run,
+                redirect_stdout(output),
+            ):
+                result = downloader.download(
+                    r"https://www.douyin.com/search/demo\?type\=general"
+                )
+
+        self.assertIsNone(result)
+        self.assertIn("抖音搜索页", output.getvalue())
+        self.assertIn("单个视频链接", output.getvalue())
+        check_yt_dlp.assert_not_called()
+        run.assert_not_called()
+
+    def test_download_batch_reports_failure_when_nothing_downloaded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            downloader = VideoDownloader(tmp)
+            output = StringIO()
+
+            with (
+                patch.object(downloader, "download", return_value=None),
+                redirect_stdout(output),
+            ):
+                result = downloader.download_batch(["https://example.com/video"])
+
+        self.assertEqual(result, [])
+        self.assertIn("下载失败！", output.getvalue())
+        self.assertNotIn("下载完成！", output.getvalue())
+
+    def test_douyin_fresh_cookie_error_reports_http_403(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            downloader = VideoDownloader(tmp)
+            output = StringIO()
+            completed = subprocess.CompletedProcess(
+                args=[],
+                returncode=1,
+                stdout="",
+                stderr=(
+                    "Extracted 966 cookies from chrome\n"
+                    "WARNING: Failed to download web detail JSON: HTTP Error 403: Forbidden\n"
+                    "ERROR: Fresh cookies (not necessarily logged in) are needed"
+                ),
+            )
+
+            with (
+                patch.object(downloader, "check_yt_dlp", return_value=True),
+                patch(
+                    "src.core.video_downloader.subprocess.run",
+                    return_value=completed,
+                ),
+                redirect_stdout(output),
+            ):
+                result = downloader.download("https://v.douyin.com/example/")
+
+        self.assertIsNone(result)
+        self.assertIn("HTTP 403", output.getvalue())
+        self.assertIn("Chrome Cookie 已读取", output.getvalue())
+        self.assertIn("风控或签名校验", output.getvalue())
+        self.assertNotIn("Cookie 已读取但已失效", output.getvalue())
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import redirect_stdout
+from io import StringIO
 import subprocess
 import sys
 import tempfile
@@ -43,14 +45,37 @@ class TestCliExitCodes(unittest.TestCase):
         downloader_class.return_value.download_batch.assert_called_once_with([url])
         processor_class.assert_not_called()
 
+    def test_download_only_extracts_url_from_douyin_share_text(self):
+        url = "https://v.douyin.com/2BdIqKtaiy0/"
+        share_text = f"这是一段抖音分享文案 {url} 复制此链接，打开抖音观看"
+        with (
+            patch("src.cli.VideoDownloader") as downloader_class,
+            patch("src.cli.BatchProcessor") as processor_class,
+        ):
+            downloader_class.return_value.download_batch.return_value = [
+                "/tmp/downloaded.mp4"
+            ]
+
+            return_code = self._call_main([share_text, "--download-only"])
+
+        self.assertEqual(return_code, 0)
+        downloader_class.return_value.download_batch.assert_called_once_with([url])
+        processor_class.assert_not_called()
+
     def test_download_only_returns_failure_when_download_fails(self):
         url = "https://example.com/video"
-        with patch("src.cli.VideoDownloader") as downloader_class:
+        output = StringIO()
+        with (
+            patch("src.cli.VideoDownloader") as downloader_class,
+            redirect_stdout(output),
+        ):
             downloader_class.return_value.download_batch.return_value = []
 
             return_code = self._call_main([url, "--download-only"])
 
         self.assertEqual(return_code, 1)
+        self.assertIn("下载失败", output.getvalue())
+        self.assertNotIn("下载完成", output.getvalue())
 
     def test_main_returns_failure_when_batch_contains_failures(self):
         with tempfile.TemporaryDirectory() as tmp:

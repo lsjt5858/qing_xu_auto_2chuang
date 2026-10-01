@@ -6,6 +6,14 @@ import re
 import glob
 
 
+def extract_url(text):
+    """从分享文本中提取第一个 HTTP(S) 链接。"""
+    url_match = re.search(r'https?://[^\s]+', str(text))
+    if not url_match:
+        return None
+    return url_match.group(0).rstrip('.,;!?，。；！？、）)]}>》】」』')
+
+
 def read_video_list(list_file):
     """
     从文件读取视频路径列表，支持提取链接和通配符
@@ -71,11 +79,8 @@ def process_line(text, videos):
         videos: 视频列表（会被修改）
     """
     # 尝试提取 URL
-    url_match = re.search(r'https?://[^\s]+', text)
-    if url_match:
-        url = url_match.group(0)
-        # 清理末尾可能的标点符号
-        url = re.sub(r'[.,;!?\s]+$', '', url)
+    url = extract_url(text)
+    if url:
         videos.append(url)
     else:
         # 如果没有找到 URL，当作本地文件路径
