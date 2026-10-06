@@ -10,4 +10,8 @@ if [[ ! -x "$PYTHON" ]]; then
     exit 1
 fi
 
+if [[ "${1:-}" == "compose" ]]; then
+    exec "$PYTHON" "$SCRIPT_DIR/main.py" "$@"
+fi
+
 exec "$PYTHON" "$SCRIPT_DIR/main.py" --remove-subtitles "$@"

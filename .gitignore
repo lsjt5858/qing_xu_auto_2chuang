@@ -69,3 +69,6 @@ temp/
 # 本地敏感配置
 config/semantic_scenes.local.json
 .env
+
+# 本地视频、照片等混剪素材
+/video/

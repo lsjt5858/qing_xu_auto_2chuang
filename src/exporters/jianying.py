@@ -1157,6 +1157,7 @@ def export_to_jianying_draft(
     template_dir: str | Path = DEFAULT_TEMPLATE_DIR,
     draft_name: str | None = None,
     style_template: str | None = None,
+    fps: int = 30,
 ) -> Path:
     timeline_clips = timeline_clips or artifacts.default_timeline()
     if not timeline_clips:
@@ -1357,7 +1358,7 @@ def export_to_jianying_draft(
             "id": draft_id,
             "name": final_name,
             "duration": timeline_duration_us,
-            "fps": 30.0,
+            "fps": float(fps),
             "canvas_config": {
                 "height": canvas_height,
                 "ratio": "original",

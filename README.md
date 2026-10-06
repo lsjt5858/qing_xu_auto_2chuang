@@ -1,6 +1,6 @@
 # 镜流工坊
 
-镜流工坊是一套面向短视频二创的本地处理流水线。它可以把原始视频清洗、拆镜、转录并整理成统一产物，也可以基于镜头池重新编排画面，直接生成可继续编辑的剪映草稿。
+镜流工坊是一套面向短视频二创的本地处理流水线。它可以把原始视频清洗、拆镜、转录并整理成统一产物，也可以基于镜头池重新编排画面，或按多个目录的顺序组装成 MP4，并生成可继续编辑的剪映草稿。
 
 > 当前仓库名为 `qing_xu_auto_2chuang`。代码中仍保留少量历史命名，例如 `CHAI_FLAG_*` 和默认草稿名前缀 `chai_`。
 
@@ -13,6 +13,7 @@
 | 音频与文案 | 提取 `audio.mp3`，使用 Whisper 生成简体中文全文和时间戳分段 |
 | AI 语义分镜 | 使用智谱或火山方舟视觉模型，将连续原始切镜聚合为剧情段落 |
 | 镜头池混剪 | 保留原视频头部，按字幕节奏从镜头池补齐后续画面 |
+| 多目录成片 | `run.sh compose` 按目录顺序选取完整视频/照片，生成 MP4，可加本地配乐和剪映草稿 |
 | 剪映草稿 | 写入视频、音频、字幕和草稿索引，可直接在剪映中继续编辑 |
 | 批量与下载 | 支持多个文件、目录、列表文件和 `yt-dlp` 视频链接 |
 
@@ -54,6 +55,64 @@ brew install ffmpeg
 `venv` 的虚拟环境。
 
 ## 快速开始
+
+### 多个目录组装成片
+
+例如 A 放视频头、B 放视频身、C 放视频尾。先预览选片计划：
+
+```bash
+./run.sh compose \
+  --head-dir "/path/to/A" --head-count 1 \
+  --body-dir "/path/to/B" --body-count 3 \
+  --tail-dir "/path/to/C" --tail-count 1 \
+  --seed 42 -o output/result.mp4
+```
+
+在同一命令末尾加 `--execute`，实际生成 `output/result.mp4` 和 `output/result.json`。
+默认随机选择素材，**每条视频从开头完整使用**，总时长为选中视频和照片的时长之和。
+`--seed` 只影响选片，不会随机截取视频内部位置；未指定时会自动生成并打印种子。
+
+超过三段或混用视频、照片目录时，重复使用 `--part 目录 数量`，严格保持参数顺序：
+
+```bash
+./run.sh compose \
+  --part "/path/to/开头" 1 \
+  --part "/path/to/课堂视频" 3 \
+  --part "/path/to/作品照片" 3 \
+  --part "/path/to/作品视频" 3 \
+  --part "/path/to/结尾照片" 1 \
+  --photo-duration 2 \
+  --bgm "/path/to/music.mp3" --bgm-volume 0.35 \
+  --seed 42 -o output/montage.mp4 --execute
+```
+
+`--part` 与 head/body/tail 参数互斥。数量默认为 1（命名目录用法），`all` 选取全部；
+`--selection ordered` 按文件路径排序选片，默认 `random`。每个目录内选片不重复。
+目录递归扫描，忽略隐藏文件和隐藏子目录；素材不足或选中素材损坏会报错。
+
+同时导出剪映草稿：
+
+```bash
+./run.sh compose \
+  --head-dir "/path/to/A" --body-dir "/path/to/B" --tail-dir "/path/to/C" \
+  --body-count 3 --seed 42 \
+  --bgm "/path/to/music.mp3" --mute-source \
+  --export-jianying --draft-root "/path/to/剪映草稿箱" --draft-name "目录混剪" \
+  -o output/result_with_draft.mp4 --execute
+```
+
+成片和草稿使用相同的标准化片段与完整混音，短配乐会循环到结尾。草稿使用 `basic` 模板，
+不需要语音识别或翻译；同名草稿会另建唯一目录。默认保留素材原声，`--mute-source` 可关闭。
+照片默认展示 2 秒；输出默认 1920×1080、30fps，可用 `--width/--height/--fps` 调整，
+宽高须为正偶数。不同画幅按比例缩放并补黑边。
+
+仅当明确需要裁剪时，添加 `--clip-start 1 --clip-duration 3`：
+所有选中视频从第 1 秒开始，最多取 3 秒；短视频取剩余时长，起点超过片长时报错。照片不受视频裁剪参数影响。
+
+不加 `--execute` 不创建输出目录、不生成音视频、不写草稿或本机剪映配置。
+未指定 `-o` 时生成带唯一标识的文件名；显式输出 MP4 或同名 JSON 已存在时拒绝覆盖。
+JSON 清单记录种子、输入目录、源路径、截取范围、原始计划、按输出帧率对齐后的时间线及草稿路径。
+参数错误返回 `2`，执行失败返回 `1`，成功或预览返回 `0`。
 
 ### 处理单个视频
 
@@ -267,6 +326,7 @@ python3 src/utils/jianying_draft_exporter.py \
 
 - 默认保留第一个原始切镜作为视频头
 - 按字幕结束时间构造后续画面槽位
+- 默认从池素材的开头截取槽位所需长度；只有 `--pool-clip-start random` 才随机选择内部起点
 - 镜头池递归扫描子目录
 - 优先选择时长接近、近期未使用、素材组和素材集合更分散的镜头
 - 镜头短于槽位时继续补下一条，避免延长最后一帧
@@ -298,6 +358,9 @@ python3 src/utils/jianying_draft_exporter.py \
 ```
 
 直接导出器中的对应参数名是 `--seed 42`。
+
+这里的 `--compose-with-pool` 仍按原视频音频/字幕时长编排，输出剪映草稿。
+按 A/B/C 目录组装完整镜头并导出 MP4，请使用上面的 `./run.sh compose`。
 
 ## 跳过与续跑规则
 
@@ -368,6 +431,7 @@ output/<视频名>_<时间戳>/
 | `--head-mode` | `first-scene`、`fixed-seconds` 或 `none` |
 | `--head-duration` | `fixed-seconds` 模式下保留的秒数 |
 | `--compose-seed` | 主入口中的随机选片种子 |
+| `--pool-clip-start` | 池素材截取起点：`start`（默认）或显式 `random` |
 | `--style-template` | `emotion` 或 `basic`，默认 `emotion` |
 | `--draft-root` | 剪映草稿箱根目录 |
 | `--template-dir` | 自定义剪映草稿模板目录 |
@@ -377,6 +441,7 @@ output/<视频名>_<时间戳>/
 
 ```bash
 python3 main.py --help
+./run.sh compose --help
 python3 src/utils/jianying_draft_exporter.py --help
 ```
 
@@ -445,6 +510,8 @@ config/
 └── semantic_scenes.json
 src/
 ├── cli.py
+├── commands/
+│   └── compose.py
 ├── core/
 │   ├── video_analyzer.py
 │   ├── subtitle_remover.py
@@ -455,9 +522,11 @@ src/
 │   └── video_downloader.py
 ├── composition/
 │   ├── shot_pool.py
+│   ├── directory_composer.py
 │   └── head_tail_composer.py
 ├── exporters/
 │   ├── jianying.py
+│   ├── video.py
 │   └── jianying_styles.py
 ├── models/
 │   └── artifacts.py
@@ -484,10 +553,10 @@ python3 -m unittest discover tests
 
 ## 已知限制
 
-- 当前导出的是剪映草稿，不是最终渲染的 MP4
+- 分析/镜头池模式导出剪映草稿；`compose` 支持直接渲染 MP4
 - 字幕清理仅针对底部黑边中的字幕，不会擦除直接压在活动画面上的动态字幕
 - 水印清理仅针对底部区域中位置固定、跨采样帧稳定出现的半透明水印
 - 镜头池目前主要按时长和多样性选片，尚未按画幅或内容语义过滤
-- 源视频目录只扫描第一层，镜头池目录才会递归扫描
+- 分析模式源视频目录只扫描第一层；镜头池和 `compose` 的素材目录递归扫描
 - 抖音和 TikTok 下载依赖浏览器 Cookie，平台规则变化可能导致下载失败
 - 路径中包含空格时，需要用双引号包住完整路径

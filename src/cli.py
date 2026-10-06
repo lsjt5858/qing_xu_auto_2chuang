@@ -3,6 +3,7 @@
 """
 import argparse
 import os
+import sys
 from pathlib import Path
 
 from .utils.file_utils import extract_url, read_video_list
@@ -23,6 +24,9 @@ def create_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
+  # 多目录素材组装成片（默认预览，添加 --execute 执行）
+  ./run.sh compose --head-dir A --body-dir B --tail-dir C
+
   # 分析本地视频
   python main.py video.mp4
 
@@ -92,6 +96,8 @@ urls.txt 格式示例:
                        help="当 --head-mode=fixed-seconds 时，保留头部秒数")
     parser.add_argument("--compose-seed", type=int,
                        help="组合模式下随机选镜头的随机种子")
+    parser.add_argument("--pool-clip-start", choices=["start", "random"], default="start",
+                       help="镜头池内部截取起点：默认 start 从开头取，random 才随机截取")
     parser.add_argument("--draft-root",
                        help="剪映草稿箱根目录，默认使用本机剪映目录")
     parser.add_argument("--template-dir",
@@ -155,10 +161,14 @@ def validate_semantic_scene_credentials(config_path):
     return config
 
 
-def main() -> int:
+def main(argv=None) -> int:
     """主函数"""
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "compose":
+        from .commands.compose import main as compose_main
+        return compose_main(argv[1:])
     parser = create_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.download_only:
         args.download = True

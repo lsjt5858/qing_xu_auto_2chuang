@@ -12,6 +12,25 @@ from src.models import AnalysisArtifacts, SceneSegment, TimelineClip, Transcript
 
 
 class TestHeadTailComposer(unittest.TestCase):
+    def test_pool_internal_start_is_zero_unless_random_is_explicit(self):
+        artifacts = AnalysisArtifacts(
+            output_dir=Path("/tmp/output"), video_name="demo",
+            original_video_path=None, processed_video_path=None,
+            report_path=None, audio_path=None, audio_metadata=None,
+            scenes=(), transcript_segments=(TranscriptSegment(0, 2_000_000, "slot"),),
+        )
+        pool = ShotPoolIndex([
+            ShotCandidate(Path("/tmp/long.mp4"), 30_000_000, 320, 180, "g", 1),
+        ])
+        default = HeadTailComposer(pool, CompositionSettings(head_mode="none", random_seed=7))
+        self.assertEqual(default.compose(artifacts)[0].source_start_us, 0)
+        explicit = HeadTailComposer(pool, CompositionSettings(
+            head_mode="none", random_seed=7, pool_clip_start="random",
+        ))
+        clip = explicit.compose(artifacts)[0]
+        self.assertGreater(clip.source_start_us, 0)
+        self.assertLessEqual(clip.source_start_us + clip.timeline_duration_us, 30_000_000)
+
     def test_compose_splits_tail_when_prevent_frame_extension_enabled(self):
         artifacts = AnalysisArtifacts(
             output_dir=Path("/tmp/output"),
