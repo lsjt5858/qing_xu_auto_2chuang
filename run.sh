@@ -10,6 +10,12 @@ if [[ ! -x "$PYTHON" ]]; then
     exit 1
 fi
 
+if [[ "${1:-}" == "workbench" ]]; then
+    shift
+    cd "$SCRIPT_DIR"
+    exec "$PYTHON" -m src.services.workbench "$@"
+fi
+
 if [[ "${1:-}" == "compose" ]]; then
     exec "$PYTHON" "$SCRIPT_DIR/main.py" "$@"
 fi

@@ -56,6 +56,27 @@ brew install ffmpeg
 
 ## 快速开始
 
+### Web 工作台
+
+React 工作台已连接本地 Python 服务、SQLite 任务队列和 Chrome 发布插件。
+需要 Node.js 22.13+（22.x）或 24+，先安装并构建：
+
+```bash
+venv/bin/python -m pip install -r requirements-web.txt
+npm --prefix apps/workbench ci
+npm --prefix apps/workbench run build
+./run.sh workbench --execute
+```
+
+打开 <http://127.0.0.1:8766>，即可导入本地视频、提交分镜/转录任务、
+执行完整片段混剪、预览和下载成片。数据持久保存在 `data/workbench/`。
+不加 `--execute` 仅显示启动配置。
+
+抖音发布通过本机 Chrome 插件复用登录态，默认上传预填后等待人工确认；
+直接发布需要逐条确认成片、文案和账号。插件安装、配对、真实发布的适配边界与验证范围见
+[完整运行说明](docs/WORKBENCH_RUNTIME.md)；前端开发见
+[工作台前端文档](apps/workbench/README.md)。
+
 ### 多个目录组装成片
 
 例如 A 放视频头、B 放视频身、C 放视频尾。先预览选片计划：

@@ -72,3 +72,7 @@ config/semantic_scenes.local.json
 
 # 本地视频、照片等混剪素材
 /video/
+
+# 本地工作台数据库、上传内容、会话和发布队列
+/data/workbench/
+/data/workbench-*/

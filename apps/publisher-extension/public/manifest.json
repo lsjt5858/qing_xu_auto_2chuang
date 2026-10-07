@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "镜流发布",
+  "version": "0.1.0",
+  "description": "连接本地镜流工作台，在用户选择的抖音创作者页面执行发布任务。",
+  "minimum_chrome_version": "120",
+  "permissions": [
+    "storage",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "https://creator.douyin.com/*"
+  ],
+  "action": {
+    "default_title": "打开镜流发布 Runner",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://creator.douyin.com/creator-micro/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

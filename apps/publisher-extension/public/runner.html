@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>镜流发布 Runner</title>
+    <link rel="stylesheet" href="runner.css">
+  </head>
+  <body>
+    <header class="masthead">
+      <div>
+        <p class="brand">JINGFLOW / PUBLISHER</p>
+        <h1>发布 Runner</h1>
+      </div>
+      <span class="local-mark">LOCAL ONLY</span>
+    </header>
+
+    <main>
+      <section>
+        <div class="section-title">
+          <span>01</span>
+          <h2>本地配对</h2>
+        </div>
+        <div class="fields pair-grid">
+          <label>端口<input id="port" type="number" min="1" max="65535" value="8766"></label>
+          <label>配对码<input id="pairing-code" type="text" autocomplete="off" maxlength="100"></label>
+          <button id="pair" type="button">配对</button>
+        </div>
+        <p id="pairing-state" class="state">尚未配对</p>
+      </section>
+
+      <section>
+        <div class="section-title">
+          <span>02</span>
+          <h2>账号绑定</h2>
+        </div>
+        <div class="fields tab-grid">
+          <label>创作者标签页<select id="creator-tab"></select></label>
+          <button id="refresh-tabs" type="button" class="secondary">刷新</button>
+          <button id="bind-tab" type="button">绑定账号</button>
+        </div>
+        <p id="account-state" class="state">尚未绑定账号</p>
+      </section>
+
+      <section class="execution">
+        <div class="section-title">
+          <span>03</span>
+          <h2>任务执行</h2>
+        </div>
+        <div class="actions">
+          <button id="start" type="button" disabled>开始领取</button>
+          <button id="stop" type="button" class="danger" disabled>停止</button>
+        </div>
+        <p id="runner-state" class="state">空闲</p>
+      </section>
+    </main>
+
+    <footer>账号切换、页面导航或状态不明确时自动停止。</footer>
+    <script src="runner.js"></script>
+  </body>
+</html>
