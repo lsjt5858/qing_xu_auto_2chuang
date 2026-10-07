@@ -108,7 +108,7 @@ export class ContentController {
             const result = this.adapter.evidence();
             if (!result) throw new Stop('not_ready', '等待明确发布成功证据');
             return result;
-          }, 30_000, this.controller.signal);
+          }, 30_000, this.controller.signal, 0);
           return { ok: true, value: evidence };
         }
         case 'cancel':

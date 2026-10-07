@@ -165,7 +165,10 @@ function stop(updateState = true): void {
 }
 
 pairButton.addEventListener('click', () => void pair());
-refreshButton.addEventListener('click', () => void refreshTabs(Number(tabs.value)));
+refreshButton.addEventListener('click', () => {
+  void refreshTabs(Number(tabs.value)).catch(error =>
+    state(accountState, error instanceof Error ? error.message : '刷新标签页失败', 'warn'));
+});
 bindButton.addEventListener('click', () => {
   bindButton.disabled = true;
   void bind().catch(error => state(accountState, error instanceof Error ? error.message : '绑定失败', 'warn'))
@@ -183,4 +186,7 @@ void settings().then(async config => {
   if (config.accountUid) state(accountState, `${config.accountName || '抖音账号'} · UID ${config.accountUid}`, 'ok');
   await refreshTabs(config.tabId);
   startButton.disabled = !(config.token && config.tabId !== undefined && config.accountUid);
+}).catch(error => {
+  startButton.disabled = true;
+  state(runnerState, error instanceof Error ? error.message : 'runner 初始化失败', 'warn');
 });

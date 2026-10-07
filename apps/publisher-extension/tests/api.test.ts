@@ -34,6 +34,64 @@ describe('本地 API 客户端', () => {
     expect(fetcher.mock.calls[0][0]).toContain('/p%2F1/file');
     expect(fetcher.mock.calls[0][1].headers.get('X-Lease-Token')).toBe('lease');
   });
+  it('持续活跃的文件下载可以超过 15 秒总时长', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(AbortSignal, 'timeout').mockImplementation(milliseconds => {
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(new DOMException('Timed out', 'TimeoutError')), milliseconds);
+        return controller.signal;
+      });
+      const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+        const signal = init?.signal;
+        let sent = 0;
+        return new Response(new ReadableStream<Uint8Array>({
+          start(controller) {
+            const push = () => {
+              if (signal?.aborted) {
+                controller.error(signal.reason);
+                return;
+              }
+              controller.enqueue(new Uint8Array([++sent]));
+              if (sent === job.sizeBytes) controller.close();
+              else setTimeout(push, 10_000);
+            };
+            signal?.addEventListener('abort', () => controller.error(signal.reason), { once: true });
+            push();
+          },
+        }));
+      });
+      const download = new Api(8766, 'id', 'token', fetcher).file(job, new AbortController().signal);
+
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      await expect(download).resolves.toHaveProperty('size', job.sizeBytes);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('文件流空闲 15 秒就停止并取消读取', async () => {
+    vi.useFakeTimers();
+    try {
+      const cancel = vi.fn();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1]));
+        },
+        cancel,
+      });
+      const download = new Api(8766, 'id', 'token', async () => new Response(stream))
+        .file(job, new AbortController().signal);
+      const rejected = expect(download).rejects.toThrow(/空闲/);
+
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      await rejected;
+      expect(cancel).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it.each([3, 5])('文件实际大小 %s 与任务不一致就停止', async size => {
     const api = new Api(8766, 'id', 'token', async () => new Response(new Uint8Array(size)));
     await expect(api.file(job, new AbortController().signal)).rejects.toThrow(/大小/);

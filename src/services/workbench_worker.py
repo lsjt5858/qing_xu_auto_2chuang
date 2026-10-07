@@ -9,7 +9,7 @@ The caller must use a fresh result path for each attempt and retain workDir.
 
 All returned paths are absolute. Analysis updates use original-source seconds,
 stable "<materialId>:scene:<number>" IDs, and status "analyzed". A hard skip
-without a readable report preserves the input material's known state.
+requires a readable report whose source path or content identity matches the input.
 newMaterials contains only existing shot files; the parent assigns their IDs.
 Mix outputs link to the first plan clip's materialId. Preview duration/size and
 dimensions are probed; draft path is a directory and its size excludes workDir.
@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
+import hashlib
 import json
 import math
 import os
@@ -65,6 +66,33 @@ def _write_json(path, value):
     with Path(path).open("w", encoding="utf-8") as stream:
         json.dump(value, stream, ensure_ascii=False, indent=2, allow_nan=False)
         stream.write("\n")
+
+
+def _file_identity(path):
+    path = Path(path)
+    hasher = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            hasher.update(chunk)
+    return {"sizeBytes": path.stat().st_size, "sha256": hasher.hexdigest()}
+
+
+def _report_matches_source(report, report_path, source):
+    source = source.absolute()
+    original = report.get("original_video_path")
+    declared_paths = set()
+    if isinstance(original, str) and original.strip():
+        path = Path(original).expanduser()
+        declared_paths = {path.absolute(), (Path(report_path).parent / path).absolute()}
+        existing_declared = {path for path in declared_paths if path.is_file()}
+        if existing_declared and source not in existing_declared:
+            return False
+
+    metadata = report.get("workbench", {})
+    identity = metadata.get("sourceIdentity") if isinstance(metadata, dict) else None
+    if isinstance(identity, dict):
+        return identity == _file_identity(source)
+    return source in declared_paths
 
 
 def _publish_result(path, result):
@@ -295,23 +323,20 @@ def _analyze_one(material, source, task, settings, work, output_root, emit):
     emit(f"checking existing target: {source.name}")
     existing = BatchProcessor(str(output_root))._find_existing_target_video(str(source))
     if existing is not None:
-        emit(f"skipped: target already exists: {existing}")
         report_path = existing.parent / "report.json"
         report = _load_report(report_path, material, emit)
-        if report is not None:
+        if report is not None and _report_matches_source(report, report_path, source):
+            emit(f"skipped: target already exists: {existing}")
             return True, _material_update(material, report, report_path), []
-        return True, {
-            "id": material["id"], "scenes": material.get("scenes") or [],
-            "transcript": material.get("transcript") or [],
-            "status": material.get("status") or "ready",
-        }, []
+        emit(f"existing target ignored: source identity does not match: {existing}")
 
     model = settings.get("transcriptionModel", "base")
     reuse = settings.get("reuseAnalysis", False)
     if reuse or "semantic" in steps:
         for report_path in _report_paths(material, source, output_root):
             report = _load_report(report_path, material, emit)
-            if report is None or not _base_complete(report, steps, threshold, model):
+            if (report is None or not _report_matches_source(report, report_path, source)
+                    or not _base_complete(report, steps, threshold, model)):
                 continue
             video = _report_video(report, report_path, source)
             if "clean" in steps and report.get("subtitle_removed") and video == source:
@@ -381,7 +406,11 @@ def _analyze_one(material, source, task, settings, work, output_root, emit):
         completed.append("transcribe")
     emit(f"report: saving base analysis for {source.name}")
     report = analyzer.generate_report(scenes, transcript)
-    report["workbench"] = {"completedSteps": completed, "transcriptionModel": model}
+    report["workbench"] = {
+        "completedSteps": completed,
+        "transcriptionModel": model,
+        "sourceIdentity": _file_identity(source),
+    }
     _material_update(material, report, directory / "report.json")
     _write_json(directory / "report.json", report)
     if "semantic" in steps:

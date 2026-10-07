@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DomAdapter, type EditorProfile, waitFor } from '../src/dom';
+import { Stop } from '../src/protocol';
 
 const url = 'https://creator.douyin.com/creator-micro/content/upload';
 const media = { fileName: 'clip.mp4', sizeBytes: 4, title: '标题', caption: '文案' };
@@ -115,6 +116,27 @@ describe('保守 DOM 适配', () => {
     expect(adapter.evidence()).toBeNull();
     document.body.insertAdjacentHTML('beforeend', '<div role="alert">发布成功</div>');
     expect(adapter.evidence()).toContain('发布成功');
+  });
+  it('插件填入的敏感词文案不会触发自身 guard，但页面提示仍会阻断', async () => {
+    document.body.innerHTML = `<input placeholder="填写作品标题"><div class="zone-container" contenteditable="true"></div>
+      <video src="blob:local-video"></video><button>重新上传</button><button>发布</button>`;
+    const sensitive = { ...media, caption: '验证码收不到怎么办，扫码登录说明' };
+    const adapter = new DomAdapter(document, () => url);
+    adapter.bindFile(new File(['test'], media.fileName));
+    await expect(adapter.fill(sensitive)).resolves.toBeUndefined();
+    expect(() => adapter.verify(sensitive)).not.toThrow();
+    document.body.insertAdjacentHTML('beforeend', '<div role="alert">请完成安全验证</div>');
+    expect(() => adapter.verify(sensitive)).toThrow(/验证码|登录提示/);
+  });
+  it('成功证据可选择首帧命中，不要求短 toast 稳定 350ms', async () => {
+    let visible = false;
+    const pending = waitFor(document, () => {
+      if (!visible) throw new Stop('not_ready', 'not visible');
+      return '发布成功';
+    }, 500, undefined, 0);
+    setTimeout(() => { visible = true; }, 10);
+    setTimeout(() => { visible = false; }, 160);
+    await expect(pending).resolves.toBe('发布成功');
   });
   it('默认 profile 无本次注入身份、上传中或双发布按钮均停止', async () => {
     document.body.innerHTML = `<input placeholder="填写作品标题"><textarea placeholder="添加作品描述"></textarea>

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager, redirect_stderr
 from datetime import datetime
+import hashlib
 import importlib
 import io
 import json
@@ -100,6 +101,14 @@ class WorkerCase(unittest.TestCase):
             "transcript_segments": [{"start": 0.5, "end": 1, "text": "hello"}]
             if transcript else [],
             "semantic_scene_count": 0, "semantic_scenes": [],
+            "workbench": {
+                "completedSteps": ["scenes"] + (["transcribe"] if transcript else []),
+                "transcriptionModel": "tiny",
+                "sourceIdentity": {
+                    "sizeBytes": self.source.stat().st_size,
+                    "sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+                },
+            },
         }
         write_json(directory / "report.json", report)
         return directory
@@ -239,11 +248,11 @@ class TestWorkerProtocol(WorkerCase):
                          [{"id": "m1:scene:1", "startSeconds": 0, "durationSeconds": 4}])
         self.assertEqual((directory / "report.json").read_bytes(), before)
 
-    def test_hard_skip_does_not_require_a_valid_report(self):
+    def test_hard_skip_does_not_trust_a_target_with_invalid_identity_report(self):
         directory = self.cache(target=True)
         (directory / "report.json").write_text("{broken", encoding="utf-8")
-        self.assertEqual(self.execute(), 0)
-        self.assertEqual(read_json(self.result)["status"], "skipped")
+        self.assertEqual(self.execute(), 1)
+        self.assertFalse(self.result.exists())
 
     def test_complete_report_reused_without_pipeline(self):
         directory = self.cache()
@@ -266,6 +275,39 @@ class TestWorkerProtocol(WorkerCase):
 
 
 class TestWorkerAnalysis(WorkerCase):
+    def test_same_stem_cache_from_another_source_is_not_reused(self):
+        worker()
+        directory = self.cache(target=True)
+        report = read_json(directory / "report.json")
+        other = self.root / "other" / self.source.name
+        other.parent.mkdir()
+        other.write_bytes(b"different source")
+        report["original_video_path"] = str(other)
+        report["processed_video_path"] = str(other)
+        write_json(directory / "report.json", report)
+        with self.analyzer() as calls:
+            self.assertEqual(self.execute(), 0)
+        self.assertIn(("scenes", 27), calls)
+        self.assertEqual(read_json(self.result)["status"], "completed")
+
+    def test_cache_content_identity_mismatch_runs_fresh_analysis(self):
+        worker()
+        directory = self.cache(target=True)
+        report = read_json(directory / "report.json")
+        report["workbench"] = {
+            "completedSteps": ["scenes"],
+            "transcriptionModel": "tiny",
+            "sourceIdentity": {
+                "sizeBytes": self.source.stat().st_size,
+                "sha256": hashlib.sha256(b"different source").hexdigest(),
+            },
+        }
+        write_json(directory / "report.json", report)
+        with self.analyzer() as calls:
+            self.assertEqual(self.execute(), 0)
+        self.assertIn(("scenes", 27), calls)
+        self.assertEqual(read_json(self.result)["status"], "completed")
+
     def test_scene_processing_disables_the_unused_ffplay_probe(self):
         worker()
         with patch.dict(os.environ):
@@ -383,6 +425,14 @@ class TestWorkerAnalysis(WorkerCase):
         result = read_json(self.result)
         self.assertEqual(len(result["newMaterials"]), 2)
         self.assertEqual(result["materialUpdates"][0]["status"], "analyzed")
+        report = read_json(result["materialUpdates"][0]["reportPath"])
+        self.assertEqual(
+            report["workbench"]["sourceIdentity"],
+            {
+                "sizeBytes": self.source.stat().st_size,
+                "sha256": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+            },
+        )
 
     def test_missing_split_artifact_is_a_failure(self):
         worker()

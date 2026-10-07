@@ -24,6 +24,29 @@ class TestRunScript(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("usage:", result.stdout)
 
+    def test_workbench_module_default_data_directory_is_project_relative(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            environment = dict(os.environ)
+            environment["PYTHONPATH"] = str(PROJECT_ROOT)
+            result = subprocess.run(
+                [
+                    str(PROJECT_ROOT / "venv/bin/python"),
+                    "-m",
+                    "src.services.workbench",
+                ],
+                cwd=tmp,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            f"本地数据：{PROJECT_ROOT / 'data/workbench'}",
+            result.stdout,
+        )
+
 
 class TestCollectScenesScript(unittest.TestCase):
     def _copy_script(self, root: Path) -> Path:

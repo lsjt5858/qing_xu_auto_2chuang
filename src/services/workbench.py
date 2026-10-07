@@ -7,11 +7,11 @@ from pathlib import Path
 def main():
     parser = argparse.ArgumentParser(description="青序本地工作台与发布队列")
     parser.add_argument("--execute", action="store_true", help="实际启动服务；否则仅显示启动配置")
-    parser.add_argument("--data-dir", type=Path, default=Path("data/workbench"),
-                        help="持久数据库及上传文件目录")
+    parser.add_argument("--data-dir", type=Path, default=None,
+                        help="持久数据库及上传文件目录（默认：项目 data/workbench）")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
-    data_dir = args.data_dir.expanduser().resolve()
+    data_dir = (args.data_dir or root / "data" / "workbench").expanduser().resolve()
     print("工作台：http://127.0.0.1:8766", flush=True)
     print(f"本地数据：{data_dir}", flush=True)
     if not args.execute:

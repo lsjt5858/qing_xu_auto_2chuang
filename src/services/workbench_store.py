@@ -63,15 +63,17 @@ class Store:
             return [json.loads(row[0]) for row in rows]
 
     def put(self, kind, value):
-        self.connection.execute(
-            "INSERT INTO documents(kind,id,data) VALUES(?,?,?) "
-            "ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data",
-            (kind, value["id"], json.dumps(value, ensure_ascii=False, allow_nan=False)),
-        )
-        return value
+        with self.lock:
+            self.connection.execute(
+                "INSERT INTO documents(kind,id,data) VALUES(?,?,?) "
+                "ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data",
+                (kind, value["id"], json.dumps(value, ensure_ascii=False, allow_nan=False)),
+            )
+            return value
 
     def delete(self, kind, key):
-        self.connection.execute("DELETE FROM documents WHERE kind=? AND id=?", (kind, key))
+        with self.lock:
+            self.connection.execute("DELETE FROM documents WHERE kind=? AND id=?", (kind, key))
 
     def close(self):
         self.connection.close()

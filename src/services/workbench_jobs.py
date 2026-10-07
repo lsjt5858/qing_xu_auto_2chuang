@@ -23,6 +23,8 @@ class JobRunner:
         self.process_lock = threading.RLock()
 
     def recover(self):
+        from .workbench_api import TERMINAL_PUBLISH, remove_frozen_publish_file
+
         with self.store.transaction() as store:
             for task in store.all("tasks"):
                 if task["status"] in {"running", "cancelled"}:
@@ -47,6 +49,8 @@ class JobRunner:
                     job.update(status="unknown" if job["status"] == "submitting" else "blocked",
                                message="服务重启，请核查平台页面；不会自动重试", updatedAt=now())
                     store.put("receipts", job)
+                if job["status"] in TERMINAL_PUBLISH:
+                    remove_frozen_publish_file(job)
 
     def start(self):
         self.thread = threading.Thread(target=self._loop, name="workbench-worker", daemon=True)
@@ -244,6 +248,28 @@ class JobRunner:
                     except ProcessLookupError:
                         pass
         self._read_events(events_path, offset, key)
+        result = None
+        prepared_materials = []
+        prepared_outputs = []
+        if (not self.stopping.is_set() and self.process.returncode == 0
+                and result_path.is_file()):
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            for shot in result.get("newMaterials", []):
+                path = Path(shot["path"]).resolve()
+                prepared_materials.append((str(path), material_record(
+                    path, name=shot.get("name"), kind=shot.get("kind", "shot"),
+                    category=shot.get("category", "分镜片段"),
+                    duration_seconds=shot.get("durationSeconds"),
+                    size_bytes=shot.get("sizeBytes"),
+                )))
+            for output in result.get("outputs", []):
+                prepared_outputs.append(output_record(
+                    Path(output["path"]), task_id=key, kind=output["kind"],
+                    material_id=output.get("materialId", ""), name=output.get("name"),
+                    duration_seconds=output.get("durationSeconds"),
+                    width=output.get("width"), height=output.get("height"),
+                    size_bytes=output.get("sizeBytes"),
+                ))
         with self.store.transaction() as store:
             task = store.get("tasks", key)
             if task["status"] == "cancelled":
@@ -255,7 +281,7 @@ class JobRunner:
             if self.stopping.is_set():
                 task.update(status="interrupted", stage="服务已停止", progress=None,
                             error="任务因服务退出中断，请核查后重试")
-            elif self.process.returncode != 0 or not result_path.is_file():
+            elif result is None:
                 # Full log remains local; expose only a bounded tail.
                 with log_path.open("rb") as log:
                     log.seek(max(0, log_path.stat().st_size - 4000))
@@ -263,7 +289,6 @@ class JobRunner:
                 task.update(status="failed", stage="处理失败", progress=None,
                             error=error or f"处理进程退出码 {self.process.returncode}")
             else:
-                result = json.loads(result_path.read_text(encoding="utf-8"))
                 for update in result.get("materialUpdates", []):
                     material = store.get("materials", update["id"])
                     for field in ("scenes", "transcript", "status"):
@@ -273,24 +298,11 @@ class JobRunner:
                         material["_reportPath"] = update["reportPath"]
                     store.put("materials", material)
                 known_paths = {m["_path"] for m in store.all("materials")}
-                for shot in result.get("newMaterials", []):
-                    path = Path(shot["path"]).resolve()
-                    if str(path) not in known_paths:
-                        store.put("materials", material_record(
-                            path, name=shot.get("name"), kind=shot.get("kind", "shot"),
-                            category=shot.get("category", "分镜片段"),
-                            duration_seconds=shot.get("durationSeconds"),
-                            size_bytes=shot.get("sizeBytes"),
-                        ))
-                        known_paths.add(str(path))
-                for output in result.get("outputs", []):
-                    record = output_record(
-                        Path(output["path"]), task_id=key, kind=output["kind"],
-                        material_id=output.get("materialId", ""), name=output.get("name"),
-                        duration_seconds=output.get("durationSeconds"),
-                        width=output.get("width"), height=output.get("height"),
-                        size_bytes=output.get("sizeBytes"),
-                    )
+                for path, record in prepared_materials:
+                    if path not in known_paths:
+                        store.put("materials", record)
+                        known_paths.add(path)
+                for record in prepared_outputs:
                     store.put("outputs", record)
                     task["outputIds"].append(record["id"])
                 task.update(status=result["status"], stage=result.get("stage", "已完成"),

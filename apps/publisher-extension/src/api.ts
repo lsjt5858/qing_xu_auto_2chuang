@@ -1,5 +1,24 @@
 import { accountFields, fileSize, localOrigin, parseJob, record, requireThat, Stop, type Account, type Job, type Status } from './protocol';
 
+const DOWNLOAD_IDLE_MS = 15_000;
+
+async function readChunk<T>(
+  reader: ReadableStreamDefaultReader<T>,
+  signal: AbortSignal,
+): Promise<ReadableStreamReadResult<T>> {
+  signal.throwIfAborted();
+  let abort!: () => void;
+  const aborted = new Promise<never>((_, reject) => {
+    abort = () => reject(signal.reason ?? new Stop('cancelled', '操作已停止'));
+    signal.addEventListener('abort', abort, { once: true });
+  });
+  try {
+    return await Promise.race([reader.read(), aborted]);
+  } finally {
+    signal.removeEventListener('abort', abort);
+  }
+}
+
 export class Api {
   readonly origin: string;
   constructor(port: number | string, readonly extensionId: string, public token = '',
@@ -7,7 +26,8 @@ export class Api {
     this.origin = localOrigin(port);
   }
 
-  private async request(path: string, body?: unknown, signal?: AbortSignal, leaseToken?: string, pair = false): Promise<Response> {
+  private async request(path: string, body?: unknown, signal?: AbortSignal, leaseToken?: string,
+    pair = false, timeout = true): Promise<Response> {
     const headers = new Headers({ 'X-Extension-Id': this.extensionId });
     if (!pair) {
       requireThat(this.token, 'pairing', '请先配对本地工作台');
@@ -19,7 +39,9 @@ export class Api {
       method: body === undefined ? 'GET' : 'POST', headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       redirect: 'error', credentials: 'omit', cache: 'no-store',
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
+      signal: timeout
+        ? (signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000))
+        : signal,
     });
     requireThat(response.ok, 'http', `本机 API 请求失败（HTTP ${response.status}），已停止；请检查配对和租约`);
     return response;
@@ -59,29 +81,45 @@ export class Api {
 
   async file(job: Job, signal: AbortSignal): Promise<Blob> {
     fileSize(job.sizeBytes);
-    const response = await this.request(`/jobs/${encodeURIComponent(job.id)}/file`, undefined, signal, job.leaseToken);
-    const declared = response.headers.get('Content-Length');
-    requireThat(declared === null || Number(declared) === job.sizeBytes, 'size', '下载文件大小与冻结任务不一致');
-    const reader = response.body?.getReader();
-    requireThat(reader, 'download', '文件响应没有数据流');
-    let total = 0;
-    const parts: Uint8Array<ArrayBuffer>[] = [];
+    const idle = new AbortController();
+    const downloadSignal = AbortSignal.any([signal, idle.signal]);
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    const armIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        idle.abort(new Stop('download_idle', '文件下载空闲超过 15 秒，已停止'));
+      }, DOWNLOAD_IDLE_MS);
+    };
+    armIdle();
     try {
-      for (;;) {
-        signal.throwIfAborted();
-        const { done, value } = await reader.read();
-        if (done) break;
-        total += value.byteLength;
-        requireThat(total <= job.sizeBytes, 'size', '下载文件大小超过任务声明，已停止');
-        parts.push(new Uint8Array(value));
+      const response = await this.request(
+        `/jobs/${encodeURIComponent(job.id)}/file`, undefined, downloadSignal, job.leaseToken, false, false,
+      );
+      const declared = response.headers.get('Content-Length');
+      requireThat(declared === null || Number(declared) === job.sizeBytes, 'size', '下载文件大小与冻结任务不一致');
+      const reader = response.body?.getReader();
+      requireThat(reader, 'download', '文件响应没有数据流');
+      let total = 0;
+      const parts: Uint8Array<ArrayBuffer>[] = [];
+      try {
+        for (;;) {
+          const { done, value } = await readChunk(reader, downloadSignal);
+          if (done) break;
+          armIdle();
+          total += value.byteLength;
+          requireThat(total <= job.sizeBytes, 'size', '下载文件大小超过任务声明，已停止');
+          parts.push(new Uint8Array(value));
+        }
+        requireThat(total === job.sizeBytes, 'size', '下载文件不完整，大小与任务不一致');
+        return new Blob(parts, { type: videoMime(job.fileName) });
+      } catch (error) {
+        await reader.cancel().catch(() => undefined);
+        throw error;
+      } finally {
+        reader.releaseLock();
       }
-      requireThat(total === job.sizeBytes, 'size', '下载文件不完整，大小与任务不一致');
-      return new Blob(parts, { type: videoMime(job.fileName) });
-    } catch (error) {
-      await reader.cancel().catch(() => undefined);
-      throw error;
     } finally {
-      reader.releaseLock();
+      if (idleTimer) clearTimeout(idleTimer);
     }
   }
 }

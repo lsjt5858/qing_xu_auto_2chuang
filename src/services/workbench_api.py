@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 import hashlib
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import random
@@ -84,7 +85,7 @@ class PairRequest(Model):
 
 class AccountIdentity(Model):
     uid: str = Field(min_length=1, max_length=100)
-    nickname: str = Field(min_length=1, max_length=100)
+    nickname: str = Field(default="", max_length=100)
     unique_id: str = Field(default="", max_length=100)
     short_id: str = Field(default="", max_length=100)
 
@@ -118,6 +119,83 @@ def file_digest(path):
         while chunk := stream.read(1024 * 1024):
             hasher.update(chunk)
     return hasher.hexdigest()
+
+
+def report_number(value, field, *, positive=False):
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(422, f"report.json 的 {field} 必须是数字") from exc
+    if not math.isfinite(number) or number < 0 or (positive and number == 0):
+        requirement = "正数" if positive else "非负有限数字"
+        raise HTTPException(422, f"report.json 的 {field} 必须是{requirement}")
+    return number
+
+
+def parse_report_content(report):
+    if not isinstance(report, dict):
+        raise HTTPException(422, "report.json 顶层必须是对象")
+    scenes = report.get("scenes") or []
+    transcript = report.get("transcript_segments") or []
+    if not isinstance(scenes, list) or not isinstance(transcript, list):
+        raise HTTPException(422, "report.json 的 scenes 和 transcript_segments 必须是数组")
+    try:
+        parsed_scenes = [
+            {
+                "startSeconds": report_number(
+                    scene.get("start_time", 0), f"scenes[{index}].start_time"
+                ),
+                "durationSeconds": report_number(
+                    scene.get("duration", 0),
+                    f"scenes[{index}].duration",
+                    positive=True,
+                ),
+            }
+            for index, scene in enumerate(scenes)
+            if isinstance(scene, dict)
+        ]
+        parsed_transcript = [
+            {
+                "startSeconds": report_number(
+                    segment.get("start", 0), f"transcript_segments[{index}].start"
+                ),
+                "text": str(segment.get("text", "")),
+            }
+            for index, segment in enumerate(transcript)
+            if isinstance(segment, dict)
+        ]
+    except AttributeError as exc:
+        raise HTTPException(422, "report.json 的分镜或转录条目必须是对象") from exc
+    if len(parsed_scenes) != len(scenes) or len(parsed_transcript) != len(transcript):
+        raise HTTPException(422, "report.json 的分镜或转录条目必须是对象")
+    return parsed_scenes, parsed_transcript
+
+
+def report_video_path(report, report_path, root_videos):
+    resolved = {path.resolve(): path for path in root_videos}
+    for key in ("processed_video_path", "original_video_path"):
+        value = report.get(key)
+        if not isinstance(value, str) or not value.strip():
+            continue
+        candidate = Path(value).expanduser()
+        candidates = [candidate.resolve()]
+        if not candidate.is_absolute():
+            candidates.insert(0, (report_path.parent / candidate).resolve())
+        matches = [resolved[path] for path in candidates if path in resolved]
+        if len(matches) == 1:
+            return matches[0]
+    video_name = report.get("video_name")
+    if isinstance(video_name, str) and video_name.strip():
+        stem = Path(video_name.strip()).stem
+        matches = [path for path in root_videos if path.stem == stem]
+        if len(matches) == 1:
+            return matches[0]
+    if len(root_videos) == 1:
+        return root_videos[0]
+    raise HTTPException(
+        422,
+        "report.json 无法唯一匹配目录中的视频；请只选择单条分析结果目录",
+    )
 
 
 def require(store, kind, key):
@@ -186,6 +264,19 @@ def output_record(
     }
 
 
+def remove_frozen_publish_file(job):
+    value = job.get("_path")
+    if not value:
+        return
+    path = Path(value)
+    try:
+        path.unlink(missing_ok=True)
+        path.parent.rmdir()
+    except OSError:
+        # The receipt remains terminal even if an external process temporarily holds the file.
+        pass
+
+
 def expire_leases(store):
     for job in store.all("receipts"):
         if (job["status"] in ACTIVE_PUBLISH and job.get("_leaseToken")
@@ -194,6 +285,7 @@ def expire_leases(store):
             job["message"] = "插件租约已到期，请核查平台页面；不会自动重试"
             job["updatedAt"] = now()
             store.put("receipts", job)
+            remove_frozen_publish_file(job)
 
 
 def invalidate_switched_account_leases(store, extension_id, account_uid):
@@ -204,6 +296,7 @@ def invalidate_switched_account_leases(store, extension_id, account_uid):
             job["message"] = "插件登录账号已切换，请核查平台页面；不会自动重试"
             job["updatedAt"] = now()
             store.put("receipts", job)
+            remove_frozen_publish_file(job)
 
 
 def dependency_info():
@@ -265,9 +358,13 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
     def local_origin(origin):
         if not origin:
             return True
-        parsed = urlparse(origin)
+        try:
+            parsed = urlparse(origin)
+            port = parsed.port
+        except ValueError:
+            return False
         return (parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "localhost"}
-                and parsed.port in {8766, 5173})
+                and port in {8766, 5173})
 
     @app.middleware("http")
     async def local_boundary(request: Request, call_next):
@@ -351,13 +448,6 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
     def load_snapshot():
         return snapshot()
 
-    def register_material(store, path, **kwargs):
-        resolved = str(path.resolve())
-        for existing in store.all("materials"):
-            if existing["_path"] == resolved:
-                return existing
-        return store.put("materials", material_record(path, **kwargs))
-
     async def import_uploads(files, outputs=False):
         if not files or len(files) > 100:
             raise HTTPException(422, "每次导入 1–100 个视频")
@@ -407,15 +497,27 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
         root = Path(body.path).expanduser().resolve()
         if not root.is_dir():
             raise HTTPException(422, "目录不存在")
-        candidates = [p for p in sorted(root.iterdir())
-                      if p.is_file() and p.suffix.lower() in VIDEO_EXTENSIONS and not p.name.startswith(".")]
+        root_videos = [
+            path
+            for path in sorted(root.iterdir())
+            if path.is_file()
+            and path.suffix.lower() in VIDEO_EXTENSIONS
+            and not path.name.startswith(".")
+        ]
+        candidates = list(root_videos)
         report_path = root / "report.json"
         report = None
+        report_target = None
+        report_scenes = []
+        report_transcript = []
         if report_path.is_file():
             try:
                 report = json.loads(report_path.read_text(encoding="utf-8"))
-            except (ValueError, OSError) as exc:
+            except (json.JSONDecodeError, OSError) as exc:
                 raise HTTPException(422, "report.json 无法读取") from exc
+            report_scenes, report_transcript = parse_report_content(report)
+            if root_videos:
+                report_target = report_video_path(report, report_path, root_videos)
             scenes_dir = root / "scenes"
             if scenes_dir.is_dir():
                 candidates += [p for p in sorted(scenes_dir.iterdir())
@@ -424,24 +526,43 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
             raise HTTPException(422, "目录内没有视频；请选择素材目录或单条分析结果目录")
         if len(candidates) > 500:
             raise HTTPException(422, "目录视频超过 500 个，请分批导入")
+
         with app.state.store.transaction() as store:
+            existing = {
+                item["_path"]: item
+                for item in store.all("materials")
+            }
+        prepared = {}
+        for path in candidates:
+            resolved = str(path.resolve())
+            if resolved in existing:
+                continue
+            prepared[resolved] = material_record(
+                path,
+                kind="shot" if path.parent.name == "scenes" else "video",
+                category=root.name,
+            )
+
+        with app.state.store.transaction() as store:
+            current = {
+                item["_path"]: item
+                for item in store.all("materials")
+            }
             for path in candidates:
-                material = register_material(store, path,
-                                             kind="shot" if path.parent.name == "scenes" else "video",
-                                             category=root.name)
-                if report and path.parent == root:
+                resolved = str(path.resolve())
+                material = current.get(resolved)
+                if material is None:
+                    material = prepared[resolved]
+                    store.put("materials", material)
+                    current[resolved] = material
+                if report and path == report_target:
                     material["status"] = "analyzed"
                     material["_reportPath"] = str(report_path)
                     material["scenes"] = [
-                        {"id": f"{material['id']}_{index}",
-                         "startSeconds": float(scene.get("start_time", 0)),
-                         "durationSeconds": float(scene.get("duration", 0))}
-                        for index, scene in enumerate(report.get("scenes") or [])
+                        {"id": f"{material['id']}_{index}", **scene}
+                        for index, scene in enumerate(report_scenes)
                     ]
-                    material["transcript"] = [
-                        {"startSeconds": float(segment.get("start", 0)), "text": str(segment.get("text", ""))}
-                        for segment in report.get("transcript_segments") or []
-                    ]
+                    material["transcript"] = report_transcript
                     store.put("materials", material)
         return snapshot()
 
@@ -583,6 +704,7 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
                     job.update(status="unknown" if job["status"] == "submitting" else "blocked",
                                message="插件配对已撤销，请核查平台页面", updatedAt=now())
                     store.put("receipts", job)
+                    remove_frozen_publish_file(job)
         return snapshot()
 
     @app.post("/api/extension/pair")
@@ -628,7 +750,7 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
                 identity = body.account
                 store.put("accounts", {
                     "id": f"douyin_{identity.uid}_{ext['id']}", "platform": "douyin",
-                    "uid": identity.uid, "name": identity.nickname,
+                    "uid": identity.uid, "name": identity.nickname or "未命名账号",
                     "handle": identity.unique_id or identity.short_id,
                     "extensionId": ext["id"], "connected": True, "lastSeenAt": now(),
                 })
@@ -642,29 +764,51 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
             if output["kind"] == "draft":
                 raise HTTPException(422, "草稿不能直接发布，请导出并导入 MP4")
             path = checked_file(output["_path"])
-            if path.suffix.lower() != ".mp4" or path.stat().st_size > MAX_UPLOAD:
+            source_size = path.stat().st_size
+            if path.suffix.lower() != ".mp4" or source_size > MAX_UPLOAD:
                 raise HTTPException(422, "请使用不超过 512 MiB 的 MP4")
             account = require(store, "accounts", body.accountId)
             ext = store.get("extensions", account["extensionId"])
             if not ext:
                 raise HTTPException(409, "目标账号的插件配对已撤销")
-            # Freeze bytes so a CLI editing an imported path cannot alter the approved upload.
-            job_id = identifier("pub")
-            frozen_dir = data_dir / "publish" / job_id
-            frozen_dir.mkdir(parents=True, mode=0o700)
-            frozen = frozen_dir / "video.mp4"
-            try:
-                shutil.copyfile(path, frozen)
-                fingerprint_values = body.model_dump(
-                    exclude={"confirmed", "accountId", "outputId"}
-                )
-                fingerprint_values["account"] = {
-                    "platform": account["platform"],
-                    "uid": account["uid"],
-                }
-                content_sha256 = file_digest(frozen)
-                fingerprint_values["contentSha256"] = content_sha256
-                fingerprint = digest(json.dumps(fingerprint_values, sort_keys=True))
+            account_snapshot = {
+                "id": account["id"], "platform": account["platform"],
+                "uid": account["uid"], "name": account["name"],
+                "extensionId": account["extensionId"],
+            }
+            output_snapshot = {"path": str(path.resolve()), "name": output["name"]}
+
+        # Copy and hash outside the global Store lock. A second transaction below
+        # revalidates the referenced records before the immutable job is committed.
+        job_id = identifier("pub")
+        frozen_dir = data_dir / "publish" / job_id
+        frozen_dir.mkdir(parents=True, mode=0o700)
+        frozen = frozen_dir / "video.mp4"
+        try:
+            shutil.copyfile(path, frozen)
+            if path.stat().st_size != source_size or frozen.stat().st_size != source_size:
+                raise HTTPException(409, "发布成片在冻结期间发生变化，请重新提交")
+            content_sha256 = file_digest(frozen)
+            if file_digest(path) != content_sha256:
+                raise HTTPException(409, "发布成片在冻结期间发生变化，请重新提交")
+            fingerprint_values = body.model_dump(
+                exclude={"confirmed", "accountId", "outputId"}
+            )
+            fingerprint_values["account"] = {
+                "platform": account_snapshot["platform"],
+                "uid": account_snapshot["uid"],
+            }
+            fingerprint_values["contentSha256"] = content_sha256
+            fingerprint = digest(json.dumps(fingerprint_values, sort_keys=True))
+            with app.state.store.transaction() as store:
+                expire_leases(store)
+                current_output = require(store, "outputs", body.outputId)
+                current_account = require(store, "accounts", body.accountId)
+                if (str(Path(current_output["_path"]).resolve()) != output_snapshot["path"]
+                        or current_account["uid"] != account_snapshot["uid"]
+                        or current_account["extensionId"] != account_snapshot["extensionId"]
+                        or not store.get("extensions", account_snapshot["extensionId"])):
+                    raise HTTPException(409, "发布目标在冻结期间发生变化，请重新提交")
                 if any(j.get("_fingerprint") == fingerprint and j["status"] != "cancelled"
                        for j in store.all("receipts")):
                     raise HTTPException(
@@ -673,14 +817,14 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
                 store.put("receipts", {
                     "id": job_id, **body.model_dump(exclude={"confirmed"}),
                     "createdAt": now(), "updatedAt": now(), "status": "queued", "simulated": False,
-                    "accountName": account["name"], "message": "等待插件领取",
-                    "_extensionId": account["extensionId"], "_accountUid": account["uid"],
-                    "_path": str(frozen), "_fileName": output["name"], "_sizeBytes": frozen.stat().st_size,
+                    "accountName": account_snapshot["name"], "message": "等待插件领取",
+                    "_extensionId": account_snapshot["extensionId"], "_accountUid": account_snapshot["uid"],
+                    "_path": str(frozen), "_fileName": output_snapshot["name"], "_sizeBytes": frozen.stat().st_size,
                     "_fingerprint": fingerprint, "_contentSha256": content_sha256,
                 })
-            except BaseException:
-                shutil.rmtree(frozen_dir, ignore_errors=True)
-                raise
+        except BaseException:
+            shutil.rmtree(frozen_dir, ignore_errors=True)
+            raise
         return snapshot()
 
     @app.post("/api/publish/{key}/cancel")
@@ -693,6 +837,7 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
                 raise HTTPException(409, "插件正在执行或已经提交，不能取消；请检查平台页面")
             job.update(status="cancelled", updatedAt=now(), message="本地队列已取消；平台上已有内容请手动检查")
             store.put("receipts", job)
+            remove_frozen_publish_file(job)
         return snapshot()
 
     @app.post("/api/extension/claim")
@@ -762,6 +907,8 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
             job.update(status=body.status, message=body.message, evidence=body.evidence, updatedAt=now())
             job["_leaseExpires"] = time.time() + 45
             store.put("receipts", job)
+            if body.status in TERMINAL_PUBLISH:
+                remove_frozen_publish_file(job)
         return {"ok": True}
 
     dist = PROJECT_ROOT / "apps" / "workbench" / "dist"

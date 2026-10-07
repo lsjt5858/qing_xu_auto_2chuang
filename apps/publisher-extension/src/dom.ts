@@ -64,8 +64,20 @@ export class DomAdapter {
   guard(): void {
     const url = new URL(this.href());
     requireThat(url.origin === CREATOR_ORIGIN && url.pathname.startsWith('/creator-micro/'), 'page', '不是支持的抖音创作者页面');
+    const editorFields = new Set<Element>();
+    for (const profile of this.profiles) {
+      for (const selector of [profile.title, profile.caption]) {
+        try {
+          this.doc.querySelectorAll(selector).forEach(element => editorFields.add(element));
+        } catch {
+          // Invalid profiles are rejected later by normal selector matching.
+        }
+      }
+    }
+    const belongsToEditor = (element: Element) =>
+      Array.from(editorFields).some(field => field === element || field.contains(element));
     const text = Array.from(this.doc.querySelectorAll('body *'))
-      .filter(el => !['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(el.tagName) && visible(el))
+      .filter(el => !belongsToEditor(el) && !['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(el.tagName) && visible(el))
       .map(el => Array.from(el.childNodes).filter(node => node.nodeType === 3).map(node => node.textContent).join(''))
       .join(' ').replace(/\s+/g, '');
     requireThat(!/你还有上次未发布的视频|是否继续编辑|继续编辑上次|恢复草稿/.test(text),
@@ -220,7 +232,8 @@ export class DomAdapter {
   }
 }
 
-export function waitFor<T>(doc: Document, inspect: () => T, timeout = 5000, signal?: AbortSignal): Promise<T> {
+export function waitFor<T>(doc: Document, inspect: () => T, timeout = 5000, signal?: AbortSignal,
+  stableMilliseconds = 350): Promise<T> {
   return new Promise((resolve, reject) => {
     let stableAt = 0;
     let settled = false;
@@ -239,8 +252,9 @@ export function waitFor<T>(doc: Document, inspect: () => T, timeout = 5000, sign
       if (signal?.aborted) return abort();
       try {
         const value = inspect();
+        if (stableMilliseconds === 0) return finish(undefined, value);
         if (!stableAt) stableAt = Date.now();
-        if (Date.now() - stableAt >= 350) return finish(undefined, value);
+        if (Date.now() - stableAt >= stableMilliseconds) return finish(undefined, value);
       } catch (error) {
         stableAt = 0;
         if (!(error instanceof Stop) || !['not_ready', 'upload_pending'].includes(error.code)) return finish(error);
