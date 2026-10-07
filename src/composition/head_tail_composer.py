@@ -22,6 +22,7 @@ class CompositionSettings:
     random_seed: int | None = None
     min_visual_slot_us: int = 2_200_000
     recent_group_window: int = 4
+    pool_clip_start: str = "start"
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,8 @@ class HeadTailComposer:
     def __init__(self, shot_pool: ShotPoolIndex, settings: CompositionSettings | None = None):
         self.shot_pool = shot_pool
         self.settings = settings or CompositionSettings()
+        if self.settings.pool_clip_start not in {"start", "random"}:
+            raise ValueError("pool_clip_start must be start or random")
         self.rng = random.Random(self.settings.random_seed)
 
     def compose(self, artifacts: AnalysisArtifacts) -> list[TimelineClip]:
@@ -94,7 +97,7 @@ class HeadTailComposer:
                 source_max_offset = max(0, candidate.duration_us - clip_duration_us)
                 source_start_us = (
                     self.rng.randint(0, source_max_offset)
-                    if source_max_offset > 0
+                    if self.settings.pool_clip_start == "random" and source_max_offset > 0
                     else 0
                 )
                 timeline.append(

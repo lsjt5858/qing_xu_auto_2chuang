@@ -64,6 +64,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Random seed for pool shot selection.",
     )
     parser.add_argument(
+        "--pool-clip-start", choices=["start", "random"], default="start",
+        help="Pool clip source offset: start (default) or explicitly random.",
+    )
+    parser.add_argument(
         "--style-template",
         choices=["emotion", "basic"],
         default="emotion",
@@ -92,6 +96,7 @@ def main() -> None:
                 else None
             ),
             random_seed=args.seed,
+            pool_clip_start=args.pool_clip_start,
         )
         composer = HeadTailComposer(shot_pool, settings)
         timeline = composer.compose(artifacts)

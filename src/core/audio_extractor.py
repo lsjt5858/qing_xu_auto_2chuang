@@ -2,7 +2,6 @@
 音频提取模块 - 负责从视频中提取音频
 """
 import os
-from moviepy import VideoFileClip
 
 
 class AudioExtractor:
@@ -19,6 +18,12 @@ class AudioExtractor:
         Returns:
             str: 音频文件路径，如果视频没有音频则返回 None
         """
+        # MoviePy probes ffplay during import. On some macOS FFmpeg builds,
+        # invoking ffplay without arguments never exits. Audio extraction does
+        # not use ffplay, so route that probe to the already-required ffmpeg.
+        os.environ.setdefault("FFPLAY_BINARY", "ffmpeg")
+        from moviepy import VideoFileClip
+
         video = VideoFileClip(video_path)
         
         if video.audio is None:

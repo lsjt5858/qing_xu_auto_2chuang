@@ -26,6 +26,27 @@ class TestLazyPackageImports(unittest.TestCase):
         )
         self.assertEqual(result.stdout.strip().splitlines(), ["False", "False"])
 
+    def test_audio_extractor_import_does_not_load_moviepy(self):
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "import sys; import src.core.audio_extractor; "
+                        "print('moviepy' in sys.modules)"
+                    ),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+        except subprocess.TimeoutExpired:
+            self.fail("Importing src.core.audio_extractor timed out")
+
+        self.assertEqual(result.stdout.strip(), "False")
+
 
 if __name__ == "__main__":
     unittest.main()

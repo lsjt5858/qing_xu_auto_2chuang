@@ -3,12 +3,18 @@
 """
 import argparse
 import os
+import sys
 from pathlib import Path
 
-from .utils.file_utils import read_video_list
+from .utils.file_utils import extract_url, read_video_list
 from .utils.batch_processor import BatchProcessor
 from .core.video_downloader import VideoDownloader
 from .exporters.jianying import resolve_draft_root
+
+
+DEFAULT_SEMANTIC_SCENES_CONFIG = (
+    Path(__file__).resolve().parents[1] / "config" / "semantic_scenes.json"
+)
 
 
 def create_parser():
@@ -18,6 +24,9 @@ def create_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
+  # 多目录素材组装成片（默认预览，添加 --execute 执行）
+  ./run.sh compose --head-dir A --body-dir B --tail-dir C
+
   # 分析本地视频
   python main.py video.mp4
 
@@ -74,7 +83,7 @@ urls.txt 格式示例:
                        help="手动指定底部字幕黑边高度（像素）")
     parser.add_argument("--semantic-scenes", action="store_true",
                        help="调用视觉模型把连续原始切镜聚合为剧情语义分镜，并同时保留两级结果")
-    parser.add_argument("--semantic-scenes-config", default="config/semantic_scenes.json",
+    parser.add_argument("--semantic-scenes-config", default=str(DEFAULT_SEMANTIC_SCENES_CONFIG),
                        help="AI 语义分镜配置文件 (默认: config/semantic_scenes.json)")
     parser.add_argument("--export-jianying", action="store_true",
                        help="分析完成后自动导出为剪映草稿")
@@ -87,6 +96,8 @@ urls.txt 格式示例:
                        help="当 --head-mode=fixed-seconds 时，保留头部秒数")
     parser.add_argument("--compose-seed", type=int,
                        help="组合模式下随机选镜头的随机种子")
+    parser.add_argument("--pool-clip-start", choices=["start", "random"], default="start",
+                       help="镜头池内部截取起点：默认 start 从开头取，random 才随机截取")
     parser.add_argument("--draft-root",
                        help="剪映草稿箱根目录，默认使用本机剪映目录")
     parser.add_argument("--template-dir",
@@ -150,10 +161,17 @@ def validate_semantic_scene_credentials(config_path):
     return config
 
 
-def main():
+def main(argv=None) -> int:
     """主函数"""
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "compose":
+        from .commands.compose import main as compose_main
+        return compose_main(argv[1:])
     parser = create_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+
+    if args.download_only:
+        args.download = True
 
     if args.remove_subtitles_only:
         args.remove_subtitles = True
@@ -177,7 +195,7 @@ def main():
             print(f"从 '{args.list}' 读取到 {len(video_list)} 个项目")
         except FileNotFoundError:
             print(f"错误: 找不到列表文件 '{args.list}'")
-            return
+            return 2
     
     if args.videos:
         for item in args.videos:
@@ -196,12 +214,18 @@ def main():
                 if not dir_videos and not dir_outputs:
                     print(f"警告: 目录 '{item}' 中未找到视频文件或可复用的分析结果")
             else:
-                video_list.append(item)
+                extracted_url = extract_url(item)
+                if extracted_url:
+                    if extracted_url != item:
+                        print(f"从分享文本提取到视频链接: {extracted_url}")
+                    video_list.append(extracted_url)
+                else:
+                    video_list.append(item)
     
     if not video_list and not existing_output_dirs:
         print("错误: 请提供至少一个视频文件/链接、已有分析结果目录，或使用 --list 指定列表文件")
         parser.print_help()
-        return
+        return 2
     
     # 去重
     video_list = list(dict.fromkeys(video_list))
@@ -210,6 +234,11 @@ def main():
     # 分离 URL 和本地文件
     urls = [item for item in video_list if is_url(item)]
     local_files = [item for item in video_list if not is_url(item)]
+    download_failures = 0
+
+    if args.download_only and not urls:
+        print("错误: --download-only 需要至少一个视频链接")
+        return 2
     
     # 如果有 URL 且启用了下载，先下载
     if urls and args.download:
@@ -217,20 +246,31 @@ def main():
         
         print(f"\n检测到 {len(urls)} 个视频链接，开始下载...")
         downloaded_files = downloader.download_batch(urls)
+        download_failures = len(urls) - len(downloaded_files)
         local_files.extend(downloaded_files)
         
         if args.download_only:
-            print(f"\n下载完成！文件保存在 downloads/ 目录")
-            return
+            if download_failures:
+                if downloaded_files:
+                    print(
+                        f"\n部分下载失败：成功 {len(downloaded_files)}/{len(urls)}，"
+                        "请查看上方错误信息。"
+                    )
+                    print("成功文件保存在 downloads/ 目录")
+                else:
+                    print("\n下载失败：未下载到任何视频，请查看上方错误信息。")
+                return 1
+            print("\n下载完成！文件保存在 downloads/ 目录")
+            return 0
     elif urls and not args.download:
         print(f"\n警告: 检测到 {len(urls)} 个视频链接，但未启用下载功能")
         print("请添加 -d 或 --download 参数来下载视频")
         print("示例: ./run.sh --list urls.txt -d")
-        return
+        return 2
     
     if not local_files and not existing_output_dirs:
         print("错误: 没有可处理的视频文件或已有分析结果")
-        return
+        return 1 if download_failures else 2
     
     processor = BatchProcessor(output_dir=args.output)
 
@@ -249,17 +289,23 @@ def main():
                 validate_semantic_scene_credentials(args.semantic_scenes_config)
             except (OSError, ValueError, RuntimeError) as exc:
                 print(f"错误: {exc}")
-                return
+                return 2
 
+    existing_failures = 0
     if existing_output_dirs:
         print(f"\n开始复用 {len(existing_output_dirs)} 个已有分析结果生成 AI 剧情语义分镜...")
         for output_dir in existing_output_dirs:
-            processor.process_existing_output_directory(output_dir, args)
+            if not processor.process_existing_output_directory(output_dir, args):
+                existing_failures += 1
 
+    batch_failures = 0
     if local_files:
         result = processor.process_batch(local_files, args)
         processor.print_summary(result)
+        batch_failures = result["failed"]
+
+    return 1 if download_failures or existing_failures or batch_failures else 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

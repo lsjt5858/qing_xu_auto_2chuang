@@ -168,6 +168,7 @@ class BatchProcessor:
                     else None
                 ),
                 random_seed=getattr(args, "compose_seed", None),
+                pool_clip_start=getattr(args, "pool_clip_start", "start"),
             )
             composer = HeadTailComposer(shot_pool, settings)
             timeline = composer.compose(artifacts)

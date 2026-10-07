@@ -1,0 +1,66 @@
+:root {
+  font-family: "Avenir Next", "PingFang SC", sans-serif;
+  color: #171a17;
+  background: #f4f6f2;
+  letter-spacing: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  width: 286px;
+  margin: 0;
+  padding: 16px;
+  border-top: 4px solid #e9b949;
+}
+
+.mark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  color: #f8faf7;
+  background: #1d2521;
+  border-radius: 4px;
+  font-family: "Songti SC", serif;
+  font-size: 23px;
+  font-weight: 800;
+}
+
+strong {
+  display: block;
+  font-size: 14px;
+}
+
+p {
+  margin: 3px 0 0;
+  color: #687169;
+  font-size: 11px;
+}
+
+button {
+  height: 34px;
+  padding: 0 14px;
+  color: #fff;
+  background: #33745a;
+  border: 1px solid #285d48;
+  border-radius: 4px;
+  cursor: pointer;
+  font: 700 12px "Avenir Next", "PingFang SC", sans-serif;
+  letter-spacing: 0;
+}
+
+button:hover {
+  background: #285d48;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
