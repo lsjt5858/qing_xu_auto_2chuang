@@ -9,6 +9,13 @@ const job: Job = { id: 'p/1', outputId: 'o', accountId: 'a', accountUid: '123',
 const account = { uid: '123', nickname: 'N', unique_id: 'H', short_id: 'S' };
 
 describe('本地 API 客户端', () => {
+  it('调用浏览器 fetch 时使用正确的 globalThis receiver', async () => {
+    const fetcher = vi.fn(function (this: unknown) {
+      expect(this).toBe(globalThis);
+      return Promise.resolve(Response.json({ ok: true }));
+    }) as unknown as typeof fetch;
+    await new Api(8766, 'id', 'token', fetcher).heartbeat();
+  });
   it('配对无认证头；后续带认证头，只发送四字段身份', async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(Response.json({ token: 'secret' }))

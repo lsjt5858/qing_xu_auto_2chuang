@@ -25,6 +25,7 @@ class JobRunner:
     def recover(self):
         from .workbench_api import TERMINAL_PUBLISH, remove_frozen_publish_file
 
+        cleanup = []
         with self.store.transaction() as store:
             for task in store.all("tasks"):
                 if task["status"] in {"running", "cancelled"}:
@@ -50,7 +51,9 @@ class JobRunner:
                                message="服务重启，请核查平台页面；不会自动重试", updatedAt=now())
                     store.put("receipts", job)
                 if job["status"] in TERMINAL_PUBLISH:
-                    remove_frozen_publish_file(job)
+                    cleanup.append(job)
+        for job in cleanup:
+            remove_frozen_publish_file(job)
 
     def start(self):
         self.thread = threading.Thread(target=self._loop, name="workbench-worker", daemon=True)

@@ -77,7 +77,7 @@ def _file_identity(path):
     return {"sizeBytes": path.stat().st_size, "sha256": hasher.hexdigest()}
 
 
-def _report_matches_source(report, report_path, source):
+def _report_matches_source(report, report_path, source, source_identity):
     source = source.absolute()
     original = report.get("original_video_path")
     declared_paths = set()
@@ -90,9 +90,7 @@ def _report_matches_source(report, report_path, source):
 
     metadata = report.get("workbench", {})
     identity = metadata.get("sourceIdentity") if isinstance(metadata, dict) else None
-    if isinstance(identity, dict):
-        return identity == _file_identity(source)
-    return source in declared_paths
+    return isinstance(identity, dict) and identity == source_identity
 
 
 def _publish_result(path, result):
@@ -200,6 +198,19 @@ def _report_paths(material, source, output_root):
         if directory.is_dir() and pattern.fullmatch(directory.name)
     )
     return list(dict.fromkeys(candidates))
+
+
+def _existing_target_candidates(source, output_root):
+    pattern = re.compile(rf"{re.escape(source.stem)}_\d{{8}}_\d{{6}}")
+    if not output_root.is_dir():
+        return []
+    return [
+        directory / "video_no_subtitles.mp4"
+        for directory in sorted(output_root.iterdir(), reverse=True)
+        if directory.is_dir()
+        and pattern.fullmatch(directory.name)
+        and (directory / "video_no_subtitles.mp4").is_file()
+    ]
 
 
 def _report_video(report, report_path, source):
@@ -315,17 +326,18 @@ def _analyze_one(material, source, task, settings, work, output_root, emit):
     # PySceneDetect imports MoviePy's optional backend, which probes ffplay.
     # Like AudioExtractor, keep this unused GUI probe out of the worker.
     os.environ.setdefault("FFPLAY_BINARY", "ffmpeg")
-    from src.utils.batch_processor import BatchProcessor
 
     steps = task["steps"]
     threshold = task.get("threshold", 27.0)
     category = material.get("category") or "scenes"
+    source_identity = _file_identity(source)
     emit(f"checking existing target: {source.name}")
-    existing = BatchProcessor(str(output_root))._find_existing_target_video(str(source))
-    if existing is not None:
+    for existing in _existing_target_candidates(source, output_root):
         report_path = existing.parent / "report.json"
         report = _load_report(report_path, material, emit)
-        if report is not None and _report_matches_source(report, report_path, source):
+        if report is not None and _report_matches_source(
+            report, report_path, source, source_identity
+        ):
             emit(f"skipped: target already exists: {existing}")
             return True, _material_update(material, report, report_path), []
         emit(f"existing target ignored: source identity does not match: {existing}")
@@ -335,7 +347,8 @@ def _analyze_one(material, source, task, settings, work, output_root, emit):
     if reuse or "semantic" in steps:
         for report_path in _report_paths(material, source, output_root):
             report = _load_report(report_path, material, emit)
-            if (report is None or not _report_matches_source(report, report_path, source)
+            if (report is None or not _report_matches_source(
+                    report, report_path, source, source_identity)
                     or not _base_complete(report, steps, threshold, model)):
                 continue
             video = _report_video(report, report_path, source)
@@ -409,7 +422,7 @@ def _analyze_one(material, source, task, settings, work, output_root, emit):
     report["workbench"] = {
         "completedSteps": completed,
         "transcriptionModel": model,
-        "sourceIdentity": _file_identity(source),
+        "sourceIdentity": source_identity,
     }
     _material_update(material, report, directory / "report.json")
     _write_json(directory / "report.json", report)

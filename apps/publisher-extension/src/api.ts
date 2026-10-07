@@ -35,7 +35,7 @@ export class Api {
     }
     if (body !== undefined) headers.set('Content-Type', 'application/json');
     if (leaseToken) headers.set('X-Lease-Token', leaseToken);
-    const response = await this.fetcher(`${this.origin}/api/extension${path}`, {
+    const response = await this.fetcher.call(globalThis, `${this.origin}/api/extension${path}`, {
       method: body === undefined ? 'GET' : 'POST', headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       redirect: 'error', credentials: 'omit', cache: 'no-store',

@@ -231,16 +231,17 @@ class TestWorkerProtocol(WorkerCase):
         before = (directory / "report.json").read_bytes()
         self.payload["task"]["steps"] = ["semantic", "transcribe", "scenes", "clean"]
         self.payload["settings"]["reuseAnalysis"] = False
-        from src.utils.batch_processor import BatchProcessor
-        original = BatchProcessor._find_existing_target_video
-        with patch.object(BatchProcessor, "_find_existing_target_video", autospec=True,
-                          side_effect=original) as finder, \
+        module = worker()
+        with patch.object(
+                module, "_existing_target_candidates",
+                wraps=module._existing_target_candidates,
+        ) as finder, \
                 patch("src.core.video_analyzer.VideoAnalyzer", side_effect=AssertionError), \
                 patch("src.core.semantic_scene_grouper.SemanticSceneGrouper.from_config",
                       side_effect=AssertionError):
             self.assertEqual(self.execute(), 0)
         finder.assert_called_once()
-        self.assertEqual(Path(finder.call_args.args[1]).name, self.source.name)
+        self.assertEqual(Path(finder.call_args.args[0]).name, self.source.name)
         result = read_json(self.result)
         self.assertEqual(result["status"], "skipped")
         self.assertEqual(result["outputs"], [])
@@ -275,6 +276,17 @@ class TestWorkerProtocol(WorkerCase):
 
 
 class TestWorkerAnalysis(WorkerCase):
+    def test_legacy_report_without_content_identity_is_not_reused(self):
+        worker()
+        directory = self.cache(target=True)
+        report = read_json(directory / "report.json")
+        report.pop("workbench")
+        write_json(directory / "report.json", report)
+        with self.analyzer() as calls:
+            self.assertEqual(self.execute(), 0)
+        self.assertIn(("scenes", 27), calls)
+        self.assertEqual(read_json(self.result)["status"], "completed")
+
     def test_same_stem_cache_from_another_source_is_not_reused(self):
         worker()
         directory = self.cache(target=True)
@@ -289,6 +301,55 @@ class TestWorkerAnalysis(WorkerCase):
             self.assertEqual(self.execute(), 0)
         self.assertIn(("scenes", 27), calls)
         self.assertEqual(read_json(self.result)["status"], "completed")
+
+    def test_hard_skip_checks_older_matching_target_after_newer_mismatch(self):
+        module = worker()
+        matching = self.cache(target=True)
+        newer = (
+            self.root
+            / "output"
+            / f"{self.source.stem}_20261002_120000"
+        )
+        newer.mkdir()
+        (newer / "video_no_subtitles.mp4").write_bytes(b"newer other target")
+        other = self.root / "other" / self.source.name
+        other.parent.mkdir()
+        other.write_bytes(b"other")
+        report = read_json(matching / "report.json")
+        report["original_video_path"] = str(other)
+        report["processed_video_path"] = str(other)
+        report["workbench"]["sourceIdentity"] = {
+            "sizeBytes": other.stat().st_size,
+            "sha256": hashlib.sha256(other.read_bytes()).hexdigest(),
+        }
+        write_json(newer / "report.json", report)
+        self.payload["settings"]["reuseAnalysis"] = False
+        with patch(
+            "src.core.video_analyzer.VideoAnalyzer",
+            side_effect=AssertionError("must find older matching target"),
+        ):
+            self.assertEqual(self.execute(), 0)
+        self.assertEqual(read_json(self.result)["status"], "skipped")
+
+    def test_source_identity_is_hashed_once_across_cache_candidates(self):
+        module = worker()
+        for day in range(1, 4):
+            directory = self.cache()
+            renamed = directory.with_name(
+                f"{self.source.stem}_2026100{day}_12000{day}"
+            )
+            if directory != renamed:
+                directory.rename(renamed)
+            report = read_json(renamed / "report.json")
+            report["workbench"]["sourceIdentity"]["sha256"] = "0" * 64
+            write_json(renamed / "report.json", report)
+        with self.analyzer(), patch.object(
+            module,
+            "_file_identity",
+            wraps=module._file_identity,
+        ) as identity:
+            self.assertEqual(self.execute(), 0)
+        self.assertEqual(identity.call_count, 1)
 
     def test_cache_content_identity_mismatch_runs_fresh_analysis(self):
         worker()

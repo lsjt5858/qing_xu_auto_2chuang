@@ -1,6 +1,7 @@
 """Local HTTP integration tests. Uses a synthetic video, never a platform account."""
 import io
 import json
+from contextlib import contextmanager
 from pathlib import Path
 import shutil
 import subprocess
@@ -181,6 +182,31 @@ class WorkbenchAPITest(unittest.TestCase):
         self.assertEqual(materials["b.mp4"]["status"], "ready")
         self.assertEqual(materials["b.mp4"]["transcript"], [])
 
+    def test_report_with_explicit_other_source_is_not_bound_to_only_video(self):
+        directory = Path(self.directory.name) / "wrong-report"
+        directory.mkdir()
+        (directory / "actual.mp4").write_bytes(self.video)
+        (directory / "report.json").write_text(
+            json.dumps(
+                {
+                    "video_name": "different",
+                    "original_video_path": str(directory / "different.mp4"),
+                    "scenes": [{"start_time": 0, "duration": 0.4}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        response = self.client.post(
+            "/api/materials/directory", json={"path": str(directory)}
+        )
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertFalse(
+            any(
+                item["name"] == "actual.mp4"
+                for item in self.client.get("/api/snapshot").json()["materials"]
+            )
+        )
+
     def test_malformed_report_numbers_return_422_without_registering_material(self):
         directory = Path(self.directory.name) / "malformed"
         directory.mkdir()
@@ -199,6 +225,27 @@ class WorkbenchAPITest(unittest.TestCase):
                 for item in self.client.get("/api/snapshot").json()["materials"]
             )
         )
+
+    def test_malformed_report_collection_and_boolean_time_return_422(self):
+        reports = [
+            {"video_name": "bad", "scenes": {}},
+            {
+                "video_name": "bad",
+                "scenes": [{"start_time": True, "duration": 1}],
+            },
+        ]
+        for index, report in enumerate(reports):
+            with self.subTest(report=report):
+                directory = Path(self.directory.name) / f"bad-shape-{index}"
+                directory.mkdir()
+                (directory / "bad.mp4").write_bytes(self.video)
+                (directory / "report.json").write_text(
+                    json.dumps(report), encoding="utf-8"
+                )
+                response = self.client.post(
+                    "/api/materials/directory", json={"path": str(directory)}
+                )
+                self.assertEqual(response.status_code, 422, response.text)
 
     def test_directory_probe_runs_outside_global_store_lock(self):
         directory = Path(self.directory.name) / "unlocked-import"
@@ -259,6 +306,55 @@ class WorkbenchAPITest(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(lock_results, [True])
+
+    def test_same_size_source_replacement_during_freeze_is_rejected(self):
+        output = self.upload(outputs=True)
+        account = self.pair()
+        original_copy = shutil.copyfile
+
+        def replace_before_copy(source, destination):
+            source = Path(source)
+            source.write_bytes(b"X" * source.stat().st_size)
+            return original_copy(source, destination)
+
+        with patch.object(
+            workbench_api.shutil, "copyfile", side_effect=replace_before_copy
+        ):
+            response = self.client.post(
+                "/api/publish",
+                json={
+                    "outputId": output["id"],
+                    "accountId": account["id"],
+                    "title": "Fixture",
+                    "caption": "",
+                    "mode": "prefill",
+                    "confirmed": True,
+                },
+            )
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(self.client.get("/api/snapshot").json()["receipts"], [])
+
+    def test_legacy_output_without_content_hash_requires_reimport(self):
+        output = self.upload(outputs=True)
+        account = self.pair()
+        with self.app.state.store.transaction() as store:
+            internal = store.get("outputs", output["id"])
+            internal.pop("_contentSha256")
+            store.put("outputs", internal)
+        response = self.client.post(
+            "/api/publish",
+            json={
+                "outputId": output["id"],
+                "accountId": account["id"],
+                "title": "Fixture",
+                "caption": "",
+                "mode": "prefill",
+                "confirmed": True,
+            },
+        )
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertIn("重新导入", response.json()["detail"])
+        self.assertEqual(self.client.get("/api/snapshot").json()["receipts"], [])
 
     def test_empty_account_nickname_is_accepted_with_safe_display_name(self):
         code = self.client.post("/api/pairing", json={}).json()["code"]
@@ -350,6 +446,25 @@ class WorkbenchAPITest(unittest.TestCase):
         response = self.client.post(f"/api/publish/{receipt['id']}/cancel", json={})
         self.assertEqual(response.status_code, 200, response.text)
         self.assertFalse(frozen.exists())
+
+    def test_cancel_commit_failure_keeps_frozen_copy_and_queued_status(self):
+        receipt, _ = self.queue_publish(mode="prefill")
+        store = self.app.state.store
+        frozen = Path(store.get("receipts", receipt["id"])["_path"])
+        original_transaction = store.transaction
+
+        @contextmanager
+        def fail_before_commit():
+            with original_transaction() as transaction:
+                yield transaction
+                raise RuntimeError("injected commit failure")
+
+        with patch.object(store, "transaction", fail_before_commit):
+            with self.assertRaisesRegex(RuntimeError, "commit failure"):
+                self.client.post(f"/api/publish/{receipt['id']}/cancel", json={})
+
+        self.assertTrue(frozen.is_file())
+        self.assertEqual(store.get("receipts", receipt["id"])["status"], "queued")
 
     def test_account_switch_invalidates_existing_lease(self):
         self.queue_publish()

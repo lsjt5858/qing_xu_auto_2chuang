@@ -122,6 +122,8 @@ def file_digest(path):
 
 
 def report_number(value, field, *, positive=False):
+    if isinstance(value, bool):
+        raise HTTPException(422, f"report.json 的 {field} 必须是数字")
     try:
         number = float(value)
     except (TypeError, ValueError) as exc:
@@ -135,8 +137,8 @@ def report_number(value, field, *, positive=False):
 def parse_report_content(report):
     if not isinstance(report, dict):
         raise HTTPException(422, "report.json 顶层必须是对象")
-    scenes = report.get("scenes") or []
-    transcript = report.get("transcript_segments") or []
+    scenes = report.get("scenes", [])
+    transcript = report.get("transcript_segments", [])
     if not isinstance(scenes, list) or not isinstance(transcript, list):
         raise HTTPException(422, "report.json 的 scenes 和 transcript_segments 必须是数组")
     try:
@@ -173,10 +175,12 @@ def parse_report_content(report):
 
 def report_video_path(report, report_path, root_videos):
     resolved = {path.resolve(): path for path in root_videos}
+    has_declared_source = False
     for key in ("processed_video_path", "original_video_path"):
         value = report.get(key)
         if not isinstance(value, str) or not value.strip():
             continue
+        has_declared_source = True
         candidate = Path(value).expanduser()
         candidates = [candidate.resolve()]
         if not candidate.is_absolute():
@@ -186,11 +190,12 @@ def report_video_path(report, report_path, root_videos):
             return matches[0]
     video_name = report.get("video_name")
     if isinstance(video_name, str) and video_name.strip():
+        has_declared_source = True
         stem = Path(video_name.strip()).stem
         matches = [path for path in root_videos if path.stem == stem]
         if len(matches) == 1:
             return matches[0]
-    if len(root_videos) == 1:
+    if not has_declared_source and len(root_videos) == 1:
         return root_videos[0]
     raise HTTPException(
         422,
@@ -247,7 +252,8 @@ def material_record(
 
 def output_record(
     path: Path, *, task_id="", kind="final", material_id="", name=None,
-    duration_seconds=None, width=None, height=None, size_bytes=None, **_,
+    duration_seconds=None, width=None, height=None, size_bytes=None,
+    content_sha256=None, **_,
 ):
     if kind == "draft":
         info = {"durationSeconds": duration_seconds or 0}
@@ -255,13 +261,16 @@ def output_record(
         info = {"durationSeconds": duration_seconds, "width": width, "height": height}
     else:
         info = probe(path)
-    return {
+    record = {
         "id": identifier("out"), "taskId": task_id, "name": name or path.name, "kind": kind,
         "materialId": material_id, **info,
         "sizeBytes": size_bytes if size_bytes is not None
         else path.stat().st_size if path.is_file() else None,
         "title": path.stem[:55], "caption": "", "_path": str(path.resolve()),
     }
+    if kind != "draft" and path.is_file():
+        record["_contentSha256"] = content_sha256 or file_digest(path)
+    return record
 
 
 def remove_frozen_publish_file(job):
@@ -278,6 +287,7 @@ def remove_frozen_publish_file(job):
 
 
 def expire_leases(store):
+    cleanup = []
     for job in store.all("receipts"):
         if (job["status"] in ACTIVE_PUBLISH and job.get("_leaseToken")
                 and job.get("_leaseExpires", 0) <= time.time()):
@@ -285,10 +295,12 @@ def expire_leases(store):
             job["message"] = "插件租约已到期，请核查平台页面；不会自动重试"
             job["updatedAt"] = now()
             store.put("receipts", job)
-            remove_frozen_publish_file(job)
+            cleanup.append(job)
+    return cleanup
 
 
 def invalidate_switched_account_leases(store, extension_id, account_uid):
+    cleanup = []
     for job in store.all("receipts"):
         if (job.get("_extensionId") == extension_id and job.get("_leaseToken")
                 and job["status"] in ACTIVE_PUBLISH and job.get("_accountUid") != account_uid):
@@ -296,7 +308,8 @@ def invalidate_switched_account_leases(store, extension_id, account_uid):
             job["message"] = "插件登录账号已切换，请核查平台页面；不会自动重试"
             job["updatedAt"] = now()
             store.put("receipts", job)
-            remove_frozen_publish_file(job)
+            cleanup.append(job)
+    return cleanup
 
 
 def dependency_info():
@@ -421,7 +434,7 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
     def snapshot():
         store = app.state.store
         with store.transaction():
-            expire_leases(store)
+            cleanup = expire_leases(store)
             result = {kind: public(store.all(kind)) for kind in ("materials", "tasks", "outputs", "receipts")}
             for material in result["materials"]:
                 material["fileUrl"] = f"/api/materials/{material['id']}/file"
@@ -442,7 +455,9 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
                                  "dependencies": dependency_info(), "extensions": public(extensions)}
             result["settings"] = public(store.get("settings", "settings"))
             result["settings"].pop("id", None)
-            return result
+        for job in cleanup:
+            remove_frozen_publish_file(job)
+        return result
 
     @app.get("/api/snapshot")
     def load_snapshot():
@@ -693,6 +708,7 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
 
     @app.delete("/api/pairing/{extension_id}")
     def revoke_pairing(extension_id: str):
+        cleanup = []
         with app.state.store.transaction() as store:
             require(store, "extensions", extension_id)
             store.delete("extensions", extension_id)
@@ -704,7 +720,9 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
                     job.update(status="unknown" if job["status"] == "submitting" else "blocked",
                                message="插件配对已撤销，请核查平台页面", updatedAt=now())
                     store.put("receipts", job)
-                    remove_frozen_publish_file(job)
+                    cleanup.append(job)
+        for job in cleanup:
+            remove_frozen_publish_file(job)
         return snapshot()
 
     @app.post("/api/extension/pair")
@@ -742,7 +760,9 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
         with app.state.store.transaction() as store:
             ext = extension(request)
             account_uid = body.account.uid if body.account else None
-            invalidate_switched_account_leases(store, ext["id"], account_uid)
+            cleanup = invalidate_switched_account_leases(
+                store, ext["id"], account_uid
+            )
             ext.update(lastSeenAt=now(), _lastSeen=time.time(),
                        _accountUid=account_uid)
             store.put("extensions", ext)
@@ -754,12 +774,14 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
                     "handle": identity.unique_id or identity.short_id,
                     "extensionId": ext["id"], "connected": True, "lastSeenAt": now(),
                 })
+        for job in cleanup:
+            remove_frozen_publish_file(job)
         return {"ok": True}
 
     @app.post("/api/publish")
     def publish(body: PublishRequest):
         with app.state.store.transaction() as store:
-            expire_leases(store)
+            cleanup = expire_leases(store)
             output = require(store, "outputs", body.outputId)
             if output["kind"] == "draft":
                 raise HTTPException(422, "草稿不能直接发布，请导出并导入 MP4")
@@ -767,6 +789,14 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
             source_size = path.stat().st_size
             if path.suffix.lower() != ".mp4" or source_size > MAX_UPLOAD:
                 raise HTTPException(422, "请使用不超过 512 MiB 的 MP4")
+            content_sha256 = output.get("_contentSha256")
+            if not (
+                isinstance(content_sha256, str)
+                and re.fullmatch(r"[0-9a-f]{64}", content_sha256)
+            ):
+                raise HTTPException(
+                    409, "该成片缺少内容校验信息，请重新导入后再发布"
+                )
             account = require(store, "accounts", body.accountId)
             ext = store.get("extensions", account["extensionId"])
             if not ext:
@@ -776,7 +806,21 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
                 "uid": account["uid"], "name": account["name"],
                 "extensionId": account["extensionId"],
             }
-            output_snapshot = {"path": str(path.resolve()), "name": output["name"]}
+            source_stat = path.stat()
+            output_snapshot = {
+                "path": str(path.resolve()),
+                "name": output["name"],
+                "contentSha256": content_sha256,
+                "stat": (
+                    source_stat.st_dev,
+                    source_stat.st_ino,
+                    source_stat.st_size,
+                    source_stat.st_mtime_ns,
+                    source_stat.st_ctime_ns,
+                ),
+            }
+        for job in cleanup:
+            remove_frozen_publish_file(job)
 
         # Copy and hash outside the global Store lock. A second transaction below
         # revalidates the referenced records before the immutable job is committed.
@@ -785,11 +829,25 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
         frozen_dir.mkdir(parents=True, mode=0o700)
         frozen = frozen_dir / "video.mp4"
         try:
+            current_stat = path.stat()
+            current_identity = (
+                current_stat.st_dev,
+                current_stat.st_ino,
+                current_stat.st_size,
+                current_stat.st_mtime_ns,
+                current_stat.st_ctime_ns,
+            )
+            if current_identity != output_snapshot["stat"]:
+                raise HTTPException(409, "发布成片在冻结前发生变化，请重新提交")
+            expected_sha256 = output_snapshot["contentSha256"]
             shutil.copyfile(path, frozen)
             if path.stat().st_size != source_size or frozen.stat().st_size != source_size:
                 raise HTTPException(409, "发布成片在冻结期间发生变化，请重新提交")
             content_sha256 = file_digest(frozen)
-            if file_digest(path) != content_sha256:
+            if (
+                content_sha256 != expected_sha256
+                or file_digest(path) != expected_sha256
+            ):
                 raise HTTPException(409, "发布成片在冻结期间发生变化，请重新提交")
             fingerprint_values = body.model_dump(
                 exclude={"confirmed", "accountId", "outputId"}
@@ -801,7 +859,7 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
             fingerprint_values["contentSha256"] = content_sha256
             fingerprint = digest(json.dumps(fingerprint_values, sort_keys=True))
             with app.state.store.transaction() as store:
-                expire_leases(store)
+                cleanup = expire_leases(store)
                 current_output = require(store, "outputs", body.outputId)
                 current_account = require(store, "accounts", body.accountId)
                 if (str(Path(current_output["_path"]).resolve()) != output_snapshot["path"]
@@ -822,6 +880,8 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
                     "_path": str(frozen), "_fileName": output_snapshot["name"], "_sizeBytes": frozen.stat().st_size,
                     "_fingerprint": fingerprint, "_contentSha256": content_sha256,
                 })
+            for job in cleanup:
+                remove_frozen_publish_file(job)
         except BaseException:
             shutil.rmtree(frozen_dir, ignore_errors=True)
             raise
@@ -837,34 +897,44 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
                 raise HTTPException(409, "插件正在执行或已经提交，不能取消；请检查平台页面")
             job.update(status="cancelled", updatedAt=now(), message="本地队列已取消；平台上已有内容请手动检查")
             store.put("receipts", job)
-            remove_frozen_publish_file(job)
+        remove_frozen_publish_file(job)
         return snapshot()
 
     @app.post("/api/extension/claim")
     def claim(body: ClaimRequest, request: Request):
+        claimed = None
         with app.state.store.transaction() as store:
             ext = extension(request)
-            expire_leases(store)
+            cleanup = expire_leases(store)
             jobs = store.all("receipts")
             if any(j.get("_extensionId") == ext["id"] and j.get("_leaseToken")
                    and j["status"] in ACTIVE_PUBLISH for j in jobs):
-                return {"job": None}
-            if ext.get("_accountUid") != body.accountUid:
-                return {"job": None}
-            for job in reversed(jobs):
-                if (job["status"] == "queued" and job["_extensionId"] == ext["id"]
-                        and job["_accountUid"] == body.accountUid and not job.get("_leaseToken")):
-                    job["_leaseToken"] = secrets.token_urlsafe(32)
-                    job["_leaseExpires"] = time.time() + 45
-                    store.put("receipts", job)
-                    return {"job": {
-                        key: job[key] for key in ("id", "outputId", "accountId", "title", "caption", "mode")
-                    } | {"accountUid": job["_accountUid"], "fileName": job["_fileName"],
-                         "sizeBytes": job["_sizeBytes"], "leaseToken": job["_leaseToken"]}}
-        return {"job": None}
+                jobs = []
+            if ext.get("_accountUid") == body.accountUid:
+                for job in reversed(jobs):
+                    if (job["status"] == "queued" and job["_extensionId"] == ext["id"]
+                            and job["_accountUid"] == body.accountUid and not job.get("_leaseToken")):
+                        job["_leaseToken"] = secrets.token_urlsafe(32)
+                        job["_leaseExpires"] = time.time() + 45
+                        store.put("receipts", job)
+                        claimed = {
+                            key: job[key]
+                            for key in (
+                                "id", "outputId", "accountId",
+                                "title", "caption", "mode",
+                            )
+                        } | {
+                            "accountUid": job["_accountUid"],
+                            "fileName": job["_fileName"],
+                            "sizeBytes": job["_sizeBytes"],
+                            "leaseToken": job["_leaseToken"],
+                        }
+                        break
+        for job in cleanup:
+            remove_frozen_publish_file(job)
+        return {"job": claimed}
 
     def leased_job(store, key, token, ext):
-        expire_leases(store)
         job = require(store, "receipts", key)
         if (job["_extensionId"] != ext["id"] or not token
                 or not secrets.compare_digest(token, job.get("_leaseToken", ""))):
@@ -892,6 +962,7 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
 
     @app.post("/api/extension/jobs/{key}/event")
     def job_event(key: str, body: EventRequest, request: Request):
+        cleanup = None
         with app.state.store.transaction() as store:
             job = leased_job(store, key, body.leaseToken, extension(request))
             transitions = {
@@ -908,7 +979,9 @@ def create_app(data_dir: Path | None = None, *, start_worker=True):
             job["_leaseExpires"] = time.time() + 45
             store.put("receipts", job)
             if body.status in TERMINAL_PUBLISH:
-                remove_frozen_publish_file(job)
+                cleanup = job
+        if cleanup:
+            remove_frozen_publish_file(cleanup)
         return {"ok": True}
 
     dist = PROJECT_ROOT / "apps" / "workbench" / "dist"

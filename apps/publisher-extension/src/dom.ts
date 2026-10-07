@@ -171,20 +171,30 @@ export class DomAdapter {
     return el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement ? el.value : el.textContent ?? '';
   }
 
+  private normalizedValue(el: HTMLElement): string {
+    return this.value(el).replace(/\u200b/g, '');
+  }
+
   async fill(media: MediaFields): Promise<void> {
     const p = this.profile();
     this.uploaded(p, media);
     const title = this.field(p.title);
     const caption = this.field(p.caption);
     requireThat(title !== caption, 'ambiguous', '标题和文案匹配到相同控件');
-    this.noExistingContent();
+    requireThat(
+      this.normalizedValue(title).trim() === '' && this.normalizedValue(caption).trim() === '',
+      'existing_content', '标题或作品简介已有内容，禁止覆盖',
+    );
     for (const [el, value] of [[title, media.title], [caption, media.caption]] as const) {
       const max = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement ? el.maxLength : -1;
       requireThat(max < 0 || value.length <= max, 'length', '冻结内容超过页面字数限制，不会截断');
     }
     for (const [el, value] of [[title, media.title], [caption, media.caption]] as const) {
       this.guard();
-      requireThat(el.isConnected && this.value(el) === '', 'existing_content', '填写期间页面变化或出现已有内容，已停止');
+      requireThat(
+        el.isConnected && this.normalizedValue(el).trim() === '',
+        'existing_content', '填写期间标题或作品简介出现已有内容，已停止',
+      );
       if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
         const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
         Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(el, value);
@@ -200,7 +210,7 @@ export class DomAdapter {
       el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
     }
-    await waitFor(this.doc, () => this.verify(media), 3000);
+    await waitFor(this.doc, () => this.verify(media), 3000, undefined, 0);
   }
 
   verify(media: MediaFields): void {
@@ -208,8 +218,11 @@ export class DomAdapter {
     this.uploaded(p, media);
     const title = this.field(p.title);
     const caption = this.field(p.caption);
-    requireThat(this.value(title) === media.title && this.value(caption) === media.caption, 'content_mismatch', '页面内容与冻结任务不一致');
-    this.noExistingContent([title, caption]);
+    requireThat(
+      this.normalizedValue(title) === media.title
+        && this.normalizedValue(caption) === media.caption,
+      'content_mismatch', '页面内容与冻结任务不一致',
+    );
     const button = this.one(p.publish, true);
     requireThat(button instanceof HTMLButtonElement && !button.disabled && button.getAttribute('aria-disabled') !== 'true',
       'disabled', '发布按钮不可用或控件类型未核验');

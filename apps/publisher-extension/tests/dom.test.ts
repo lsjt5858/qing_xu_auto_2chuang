@@ -128,6 +128,38 @@ describe('保守 DOM 适配', () => {
     document.body.insertAdjacentHTML('beforeend', '<div role="alert">请完成安全验证</div>');
     expect(() => adapter.verify(sensitive)).toThrow(/验证码|登录提示/);
   });
+  it('编辑页其他平台字段有默认值时仍只填写标题和作品简介', async () => {
+    document.body.innerHTML = `<input placeholder="填写作品标题，为作品获得更多流量">
+      <div class="zone-container" contenteditable="true" data-placeholder="添加作品简介"></div>
+      <input placeholder="请输入付费场景下的视频标题" value="@账号的付费视频">
+      <video src="blob:local-video"></video><button>重新上传</button><button>发布</button>`;
+    const adapter = new DomAdapter(document, () => url);
+    adapter.bindFile(new File(['test'], media.fileName));
+    await expect(adapter.fill(media)).resolves.toBeUndefined();
+    expect(() => adapter.verify(media)).not.toThrow();
+    expect(
+      (document.querySelector(
+        'input[placeholder="请输入付费场景下的视频标题"]',
+      ) as HTMLInputElement).value,
+    ).toBe('@账号的付费视频');
+  });
+  it('预填回验不受封面生成等无关 DOM 持续变化影响', async () => {
+    document.body.innerHTML = `<input placeholder="填写作品标题，为作品获得更多流量">
+      <div class="zone-container" contenteditable="true" data-placeholder="添加作品简介"></div>
+      <video src="blob:local-video"></video><button>重新上传</button><button>发布</button>
+      <div id="background-progress">0%</div>`;
+    const adapter = new DomAdapter(document, () => url);
+    adapter.bindFile(new File(['test'], media.fileName));
+    let progress = 0;
+    const timer = setInterval(() => {
+      document.querySelector('#background-progress')!.textContent = `${++progress}%`;
+    }, 50);
+    try {
+      await expect(adapter.fill(media)).resolves.toBeUndefined();
+    } finally {
+      clearInterval(timer);
+    }
+  });
   it('成功证据可选择首帧命中，不要求短 toast 稳定 350ms', async () => {
     let visible = false;
     const pending = waitFor(document, () => {
